@@ -44,7 +44,13 @@ export default function LoginPage() {
     try {
       await login(email, password);
     } catch (err: any) {
-      error("Sign in failed", err.message || "Invalid credentials");
+      let msg = err.message || "Invalid credentials";
+      if (err.status === 401) {
+        msg = "Incorrect email or password. Please check your credentials or create an account.";
+      } else if (err.status === 429) {
+        msg = "Too many failed attempts. Please wait a few minutes before trying again.";
+      }
+      error("Sign in failed", msg);
     } finally {
       setSubmitting(false);
     }
@@ -93,6 +99,29 @@ export default function LoginPage() {
             Sign in
           </Button>
         </form>
+
+        <div className="mt-4 text-center text-sm text-ink-soft">
+          Don&apos;t have an account?{" "}
+          <Link href="/register" className="font-medium text-accent-ink hover:underline">
+            Sign up
+          </Link>
+        </div>
+
+        {!isDemoEnabled && (
+          <div className="mt-8 rounded-lg border border-line bg-surface p-4 text-xs text-ink-soft">
+            <p className="font-medium text-ink">Exploring BrandProof?</p>
+            <p className="mt-1 text-ink-mute">
+              Create an isolated sandbox organization to test reviews, guidelines, and compliance rules.
+            </p>
+            <Link
+              href="/register?demo=true"
+              className="mt-3 inline-flex items-center gap-1 font-semibold text-accent-ink hover:underline"
+            >
+              <span>Try Demo Sandbox</span>
+              <span aria-hidden="true">&rarr;</span>
+            </Link>
+          </div>
+        )}
 
         {isDemoEnabled && (
           <div className="mt-10 border-t border-line pt-6">

@@ -20,30 +20,34 @@ import {
   DiffResult,
   InsightsData,
   EvaluationResult,
+  RegisterPayload,
+  AuthResponse,
 } from "./types";
 
 export function getApiBase(): string {
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
   const isProduction = process.env.NODE_ENV === "production";
 
+  let url = envUrl ? envUrl.trim().replace(/\/+$/, "") : "http://localhost:8000/api/v1";
+
   if (isProduction && typeof window !== "undefined") {
     if (!envUrl) {
       throw new Error("Configuration Error: NEXT_PUBLIC_API_URL is required in production environment.");
     }
-    const clean = envUrl.trim().replace(/\/+$/, "");
-    if (!clean.startsWith("https://")) {
-      throw new Error(`Security Error: Production NEXT_PUBLIC_API_URL must use HTTPS protocol. Received: ${clean}`);
+    if (!url.startsWith("https://")) {
+      throw new Error(`Security Error: Production NEXT_PUBLIC_API_URL must use HTTPS protocol. Received: ${url}`);
     }
-    if (clean.includes("localhost") || clean.includes("127.0.0.1")) {
+    if (url.includes("localhost") || url.includes("127.0.0.1")) {
       throw new Error(`Security Error: Production NEXT_PUBLIC_API_URL cannot target localhost or 127.0.0.1.`);
     }
-    return clean;
   }
 
-  if (envUrl) {
-    return envUrl.trim().replace(/\/+$/, "");
+  // Ensure trailing /api/v1 is present
+  if (!url.endsWith("/api/v1")) {
+    url = `${url}/api/v1`;
   }
-  return "http://localhost:8000/api/v1";
+
+  return url;
 }
 
 export const API_BASE = getApiBase();
@@ -127,17 +131,34 @@ async function request<T>(
 
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
   const url = `${getApiBase()}${cleanEndpoint}`;
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } catch (err: any) {
+    if (err instanceof ApiError) throw err;
+    throw new ApiError(
+      0,
+      "Unable to reach BrandProof backend. If the backend is waking up on Render Free tier, it may take ~45s. Please retry in a few moments.",
+      err
+    );
+  }
 
   if (!response.ok) {
     let errorDetail = "An unexpected error occurred";
     let errorData = null;
     try {
       const errorJson = await response.json();
-      errorDetail = errorJson.detail || errorJson.message || errorDetail;
+      if (Array.isArray(errorJson.detail)) {
+        errorDetail = errorJson.detail
+          .map((d: any) => d.msg || (typeof d === "string" ? d : JSON.stringify(d)))
+          .join(". ");
+      } else {
+        errorDetail = errorJson.detail || errorJson.message || errorDetail;
+      }
       errorData = errorJson;
     } catch {
       errorDetail = await response.text();
@@ -157,20 +178,15 @@ export const api = {
   // Authentication
   auth: {
     login: async (email: string, password: string) =>
-      request<{ access_token: string; token_type: string; user: User }>(
+      request<AuthResponse>(
         "/auth/login",
         {
           method: "POST",
           body: JSON.stringify({ email, password }),
         }
       ),
-    register: async (payload: {
-      organization_name: string;
-      email: string;
-      password: string;
-      full_name: string;
-    }) =>
-      request<{ access_token: string; token_type: string; user: User }>(
+    register: async (payload: RegisterPayload) =>
+      request<AuthResponse>(
         "/auth/register",
         {
           method: "POST",

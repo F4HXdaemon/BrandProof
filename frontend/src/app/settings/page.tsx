@@ -84,7 +84,7 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <span className="text-ink-mute block">Corporate Domain</span>
-                  <span className="text-ink mt-0.5 block">{org?.domain || "northstarcloud.com"}</span>
+                  <span className="text-ink mt-0.5 block">{org?.domain || "—"}</span>
                 </div>
               </div>
             </Card>

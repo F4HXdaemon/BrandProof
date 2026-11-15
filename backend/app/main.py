@@ -1,4 +1,5 @@
 import os
+import sys
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
@@ -14,27 +15,19 @@ logger = logging.getLogger("brandproof.main")
 # Ensure all models are loaded
 import app.models  # noqa: F401
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Application lifespan context manager.
-    In PREVIEW and development SQLite modes, safely initializes database tables
-    and upload directories upon container startup.
-    In PRODUCTION mode, Alembic migrations ('alembic upgrade head') are strictly authoritative.
-    """
-    env = settings.ENVIRONMENT.lower()
-    if env in ("preview", "development") and settings.DATABASE_URL.startswith("sqlite"):
-        os.makedirs(settings.STORAGE_DIR, exist_ok=True)
-        Base.metadata.create_all(bind=engine)
-        logger.info(f"[{env.upper()} MODE] SQLite database & storage directory safely initialized.")
-    yield
-
+# In PREVIEW and development SQLite modes, safely initialize database tables
+# and storage directories upon application startup.
+# In PRODUCTION mode, Alembic migrations ('alembic upgrade head') are strictly authoritative.
+env = settings.ENVIRONMENT.lower()
+is_testing = "PYTEST_CURRENT_TEST" in os.environ or "pytest" in sys.modules
+if not is_testing and env in ("preview", "development") and settings.DATABASE_URL.startswith("sqlite"):
+    os.makedirs(settings.STORAGE_DIR, exist_ok=True)
+    Base.metadata.create_all(bind=engine)
+    logger.info(f"[{env.upper()} MODE] SQLite database & storage directory safely initialized.")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    lifespan=lifespan,
     description="""
 # BrandProof Governance API
 **"Every claim, traced to its source."**

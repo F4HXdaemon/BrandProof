@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { User, UserRole } from "@/lib/types";
+import { User, UserRole, RegisterPayload } from "@/lib/types";
 import { api, setToken, removeToken } from "@/lib/api";
 
 interface AuthContextType {
@@ -11,6 +11,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
+  register: (payload: RegisterPayload) => Promise<void>;
   logout: () => void;
   quickSwitchDemoUser: (role: UserRole) => Promise<void>;
 }
@@ -34,10 +35,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setTokenState(storedToken);
         const me = await api.auth.getMe();
         setUser(me);
-      } catch (err) {
-        removeToken();
-        setTokenState(null);
-        setUser(null);
+      } catch (err: any) {
+        // Only discard stored token if explicitly rejected by server (401/403)
+        // Network errors or backend spin-up delays should not immediately log the user out
+        if (err?.status === 401 || err?.status === 403) {
+          removeToken();
+          setTokenState(null);
+          setUser(null);
+        } else {
+          console.warn("Backend auth check pending or unreachable:", err?.message || err);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -49,6 +56,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       const res = await api.auth.login(email, password);
+      setToken(res.access_token);
+      setTokenState(res.access_token);
+      setUser(res.user);
+      router.push("/dashboard");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const register = async (payload: RegisterPayload) => {
+    setIsLoading(true);
+    try {
+      const res = await api.auth.register(payload);
       setToken(res.access_token);
       setTokenState(res.access_token);
       setUser(res.user);
@@ -90,6 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         isAuthenticated: !!user,
         login,
+        register,
         logout,
         quickSwitchDemoUser,
       }}

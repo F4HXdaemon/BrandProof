@@ -12,6 +12,8 @@ import { api } from "@/lib/api";
 import { DashboardData } from "@/lib/types";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
+import { useAuth } from "@/context/auth-context";
+
 /** "FACT_UPDATED" -> "Fact updated" */
 function humanizeAction(action: string): string {
   const s = action.replace(/[_.]+/g, " ").trim().toLowerCase();
@@ -19,7 +21,9 @@ function humanizeAction(action: string): string {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
+  const [orgName, setOrgName] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,8 +31,20 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.dashboard.getMetrics();
-      setData(res);
+      const [res, orgRes] = await Promise.allSettled([
+        api.dashboard.getMetrics(),
+        api.organizations.getCurrent(),
+      ]);
+
+      if (res.status === "fulfilled") {
+        setData(res.value);
+      } else {
+        throw res.reason;
+      }
+
+      if (orgRes.status === "fulfilled" && orgRes.value?.name) {
+        setOrgName(orgRes.value.name);
+      }
     } catch (err: any) {
       setError(err.message || "Failed to load dashboard data");
     } finally {
@@ -42,6 +58,7 @@ export default function DashboardPage() {
 
   const m = data?.metrics;
   const risk = data?.risk_overview;
+  const displayName = orgName || "your organization";
 
   // Only colour a number when it is something to act on.
   const stats = [
@@ -68,7 +85,7 @@ export default function DashboardPage() {
           <div>
             <h1 className="page-title text-3xl text-ink">Overview</h1>
             <p className="text-sm text-ink-soft mt-1">
-              Where drafts and approved facts stand for Northstar Cloud.
+              Where drafts and approved facts stand for {displayName}.
             </p>
           </div>
           <Button variant="ghost" size="sm" onClick={fetchDashboard} isLoading={loading}>
@@ -76,6 +93,40 @@ export default function DashboardPage() {
             Refresh
           </Button>
         </div>
+
+        {/* Onboarding Banner for New Workspaces */}
+        {!loading && !error && (m?.open_reviews ?? 0) === 0 && (data?.recent_reviews?.length ?? 0) === 0 && (
+          <div className="rounded-lg border border-accent/40 bg-accent-soft p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-semibold text-ink">Welcome to your BrandProof workspace</h2>
+                <p className="mt-1 text-xs text-ink-soft max-w-xl">
+                  Register your brand&apos;s verified claims and facts, establish guidelines and terminology rules, or initiate your first draft review.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <Link
+                  href="/reviews/new"
+                  className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-ink hover:bg-accent-hover transition-colors"
+                >
+                  New Review
+                </Link>
+                <Link
+                  href="/knowledge/facts"
+                  className="rounded-md border border-line-strong bg-surface px-3 py-1.5 text-xs font-medium text-ink hover:bg-sunken transition-colors"
+                >
+                  Add Fact
+                </Link>
+                <Link
+                  href="/knowledge/guidelines"
+                  className="rounded-md border border-line-strong bg-surface px-3 py-1.5 text-xs font-medium text-ink hover:bg-sunken transition-colors"
+                >
+                  Guidelines
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="flex items-center justify-between rounded-lg border border-rose-500/30 bg-rose-950 px-4 py-3 text-sm text-rose-300">

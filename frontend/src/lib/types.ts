@@ -17,6 +17,20 @@ export interface User {
   created_at: string;
 }
 
+export interface RegisterPayload {
+  organization_name: string;
+  organization_slug?: string;
+  email: string;
+  password: string;
+  full_name: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  user: User;
+}
+
 export interface Organization {
   id: string;
   name: string;
