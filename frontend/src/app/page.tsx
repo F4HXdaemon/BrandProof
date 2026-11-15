@@ -67,10 +67,7 @@ export default function LandingPage() {
       <main className="mx-auto w-full max-w-5xl flex-1 px-6">
         {/* Hero Section */}
         <section className="pt-20 pb-20 sm:pt-28 sm:pb-24">
-          <div className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-soft mb-6">
-            <ShieldCheck className="w-3.5 h-3.5 text-accent-ink" />
-            <span>AI proposes. Evidence decides. People approve.</span>
-          </div>
+          
 
           <h1 className="page-title max-w-3xl text-5xl sm:text-6xl leading-[1.05] text-ink font-serif font-medium tracking-tight">
             Every claim, traced to its source.
