@@ -1,5 +1,84 @@
-# BrandProof — Production Deployment Guide
-**Target Architecture: GitHub + Render (FastAPI & PostgreSQL) + Vercel (Next.js)**
+# BrandProof — Deployment Manual
+
+BrandProof supports two deployment profiles:
+1. **PREVIEW MODE (Render Free Tier + Vercel)**: Zero external services required. Runs FastAPI on Render's Free web tier using SQLite at `/tmp/brandproof-preview.db` and local upload storage under `/tmp/brandproof-uploads`. Perfect for temporary review, demos, and judging.
+2. **PRODUCTION MODE (Render Web + PostgreSQL + S3 + Vercel)**: Multi-tenant production architecture with managed PostgreSQL, persistent S3-compatible object storage, and automated pre-deploy Alembic migrations.
+
+---
+
+# PART 1 — PREVIEW DEPLOYMENT (Render Free + Vercel)
+
+This mode runs entirely on **Render Free Web Service** and **Vercel** with **NO external database (no Neon/Postgres)** and **NO external storage (no S3/Cloudflare R2)**.
+
+### How Preview Mode Works
+- **Database**: SQLite initialized at `/tmp/brandproof-preview.db`.
+- **Upload Storage**: Local storage under `/tmp/brandproof-uploads`.
+- **Schema Initialization**: Automatically created on startup via `alembic upgrade head` and application lifespan handlers.
+- **Zero Cost**: Runs within Render's Free tier limits.
+- ⚠️ **Important Ephemeral Storage Notice**: Render's Free Web Service spins down after 15 minutes of inactivity, wiping the ephemeral `/tmp` directory. When a new request arrives, Render boots a fresh container (~50s cold start) and BrandProof automatically reinitializes a clean SQLite schema. Data does not persist across container spin-downs.
+
+### 1.1 Render Free Web Service Setup
+
+1. Go to [Render Dashboard](https://dashboard.render.com).
+2. Click **New** → **Web Service**.
+3. Connect your GitHub repository `brandproof`.
+4. Configure the Web Service:
+   - **Name**: `brandproof-preview-backend`
+   - **Region**: Oregon (or your preferred region)
+   - **Branch**: `main`
+   - **Root Directory**: `backend`
+   - **Runtime**: `Python 3`
+   - **Instance Type**: `Free`
+   - **Build Command**:
+     ```bash
+     pip install --upgrade pip && pip install -r requirements.txt
+     ```
+   - **Start Command**:
+     ```bash
+     alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+     ```
+
+5. Under **Environment Variables**, add:
+   | Key | Value | Notes |
+   | :--- | :--- | :--- |
+   | `PYTHON_VERSION` | `3.11.9` | Matches tested runtime |
+   | `ENVIRONMENT` | `preview` | Enables preview mode (allows SQLite & LocalStorage) |
+   | `DATABASE_URL` | `sqlite:////tmp/brandproof-preview.db` | Ephemeral SQLite in /tmp |
+   | `STORAGE_BACKEND` | `local` | Uses local disk backend (no S3/R2 required) |
+   | `STORAGE_DIR` | `/tmp/brandproof-uploads` | Directory for uploaded documents |
+   | `SECRET_KEY` | *(Click "Generate" or paste a 32+ character random secret)* | JWT signature key |
+   | `CORS_ORIGINS` | `https://your-preview-frontend.vercel.app` | Update with your Vercel URL once deployed |
+   | `ENABLE_DEMO_RESET` | `false` | Prevents unauthenticated resets |
+   | `ENABLE_DEMO_MODE` | `false` | Keeps public persona switcher off (set `true` if desired) |
+
+6. Click **Create Web Service**.
+7. Once deployed, note your backend URL:
+   `https://brandproof-preview-backend.onrender.com`
+
+---
+
+### 1.2 Vercel Frontend Setup
+
+1. Go to [Vercel Dashboard](https://vercel.com).
+2. Click **Add New** → **Project**.
+3. Import your GitHub repository `brandproof`.
+4. Configure the build:
+   - **Framework Preset**: `Next.js`
+   - **Root Directory**: `frontend`
+   - **Build Command**: `npm run build`
+   - **Install Command**: `npm ci`
+5. Configure Environment Variables:
+   | Key | Value |
+   | :--- | :--- |
+   | `NEXT_PUBLIC_API_URL` | `https://brandproof-preview-backend.onrender.com/api/v1` |
+   | `NEXT_PUBLIC_ENABLE_DEMO_MODE` | `false` (or `true` if you want demo switcher) |
+6. Click **Deploy**.
+7. Once finished, copy your Vercel URL (e.g. `https://brandproof-preview.vercel.app`).
+8. Return to Render → `brandproof-preview-backend` → **Environment**, and set `CORS_ORIGINS` to your exact Vercel URL (e.g. `https://brandproof-preview.vercel.app`).
+
+---
+
+# PART 2 — PRODUCTION DEPLOYMENT (PostgreSQL + S3 + Vercel)
 
 This guide provides step-by-step instructions for deploying BrandProof to production environments using:
 - **GitHub**: Source code repository

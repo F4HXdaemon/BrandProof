@@ -13,10 +13,10 @@ def reset_demo_state():
     Resets and reseeds ONLY the Northstar Cloud demonstration organization.
     Strictly forbidden in production environments.
     """
-    if settings.ENVIRONMENT.lower() == "production" or not settings.ENABLE_DEMO_RESET:
+    if settings.ENVIRONMENT.lower() in ("production", "preview") or not settings.ENABLE_DEMO_RESET:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Demo reset is disabled in production environments."
+            detail="Demo reset is disabled in production and preview environments."
         )
 
     try:

@@ -29,9 +29,16 @@ def health_check(db: Session = Depends(get_db)):
             }
         )
 
-    return {
+    res = {
         "status": "healthy",
         "database": db_status,
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
     }
+    if settings.ENVIRONMENT.lower() == "preview":
+        res["storage"] = "ephemeral-local"
+        res["warning"] = (
+            "PREVIEW MODE: Database (SQLite) and local uploads under /tmp are ephemeral. "
+            "Data resets when Render Free instance spins down due to inactivity."
+        )
+    return res

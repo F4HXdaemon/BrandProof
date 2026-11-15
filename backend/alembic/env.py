@@ -49,6 +49,12 @@ def run_migrations_online() -> None:
     connect_args = {}
     if db_url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
+        if db_url.startswith("sqlite:///"):
+            sqlite_file = db_url.replace("sqlite:///", "")
+            if sqlite_file and sqlite_file != ":memory:":
+                parent_dir = os.path.dirname(os.path.abspath(sqlite_file))
+                if parent_dir:
+                    os.makedirs(parent_dir, exist_ok=True)
 
     connectable = engine_from_config(
         configuration,

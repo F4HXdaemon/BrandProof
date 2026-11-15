@@ -1,3 +1,6 @@
+import os
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -6,17 +9,32 @@ from app.config import settings
 from app.database import engine, Base
 from app.api.v1.router import api_router
 
+logger = logging.getLogger("brandproof.main")
+
 # Ensure all models are loaded
 import app.models  # noqa: F401
 
-# In development SQLite mode, allow automatic table creation for zero-setup local runs;
-# in production, Alembic migrations ('alembic upgrade head') are strictly authoritative.
-if settings.ENVIRONMENT.lower() == "development" and settings.DATABASE_URL.startswith("sqlite"):
-    Base.metadata.create_all(bind=engine)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan context manager.
+    In PREVIEW and development SQLite modes, safely initializes database tables
+    and upload directories upon container startup.
+    In PRODUCTION mode, Alembic migrations ('alembic upgrade head') are strictly authoritative.
+    """
+    env = settings.ENVIRONMENT.lower()
+    if env in ("preview", "development") and settings.DATABASE_URL.startswith("sqlite"):
+        os.makedirs(settings.STORAGE_DIR, exist_ok=True)
+        Base.metadata.create_all(bind=engine)
+        logger.info(f"[{env.upper()} MODE] SQLite database & storage directory safely initialized.")
+    yield
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
+    lifespan=lifespan,
     description="""
 # BrandProof Governance API
 **"Every claim, traced to its source."**
@@ -72,14 +90,22 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.get("/")
 def root():
-    return {
+    resp = {
         "service": settings.PROJECT_NAME,
         "version": settings.VERSION,
         "status": "operational",
+        "environment": settings.ENVIRONMENT,
         "docs_url": "/docs",
         "philosophy": "AI proposes. Evidence decides. People approve.",
         "invariant": "NO VALID SOURCE = NO FINDING",
     }
+    if settings.ENVIRONMENT.lower() == "preview":
+        resp["preview_notice"] = (
+            "PREVIEW DEPLOYMENT: Running on ephemeral SQLite (/tmp/brandproof-preview.db) "
+            "and local file storage (/tmp/brandproof-uploads). Database and uploaded files "
+            "reset upon service restart. For persistent data, deploy in production mode with PostgreSQL and S3."
+        )
+    return resp
 
 
 # Include API v1 routes

@@ -1,5 +1,6 @@
 import os
 import json
+import tempfile
 from typing import List, Union
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -67,10 +68,44 @@ class Settings(BaseSettings):
         return []
 
     @model_validator(mode="after")
-    def validate_production_configuration(self) -> "Settings":
-        """Enforce strict production security invariant: fail safe if insecure."""
-        if self.ENVIRONMENT.lower() == "production":
-            # 1. Enforce non-default JWT secret
+    def validate_environment_configuration(self) -> "Settings":
+        """
+        Validates environment-specific configuration:
+        - PREVIEW mode: permits ephemeral SQLite at /tmp/brandproof-preview.db and local storage at /tmp/brandproof-uploads
+        - PRODUCTION mode: strictly enforces PostgreSQL, high-entropy JWT secrets, non-default credentials, and disables demo reset
+        """
+        env = self.ENVIRONMENT.lower()
+
+        # =========================================================================
+        # 1. PREVIEW DEPLOYMENT MODE (Render Free Tier + Vercel)
+        # =========================================================================
+        if env == "preview":
+            # 1. Configure ephemeral SQLite database path
+            if self.DATABASE_URL == "sqlite:///./brandproof.db" or not self.DATABASE_URL:
+                # Prefer /tmp on Linux/POSIX (Render) or system tempdir on Windows
+                preview_tmp = "/tmp" if (os.path.exists("/tmp") or os.name != "nt") else tempfile.gettempdir()
+                self.DATABASE_URL = f"sqlite:///{os.path.join(preview_tmp, 'brandproof-preview.db').replace('\\', '/')}"
+
+            # 2. Configure ephemeral uploads directory
+            default_storage_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage_data")
+            if self.STORAGE_DIR == default_storage_dir or not self.STORAGE_DIR:
+                preview_tmp = "/tmp" if (os.path.exists("/tmp") or os.name != "nt") else tempfile.gettempdir()
+                self.STORAGE_DIR = os.path.join(preview_tmp, "brandproof-uploads")
+
+            # 3. Force LocalStorageBackend in preview mode (zero external storage required)
+            self.STORAGE_BACKEND = "local"
+
+            # 4. Prohibit demo reset in preview mode by default
+            self.ENABLE_DEMO_RESET = False
+
+            # 5. Disable debug mode in preview
+            self.DEBUG = False
+
+        # =========================================================================
+        # 2. STRICT PRODUCTION SECURITY INVARIANTS
+        # =========================================================================
+        elif env == "production":
+            # 1. Enforce non-default cryptographically secure JWT secret
             default_secret = "brandproof-super-secure-production-ready-jwt-secret-key-replace-in-prod"
             if self.SECRET_KEY == default_secret or len(self.SECRET_KEY) < 32:
                 raise ValueError(
@@ -78,7 +113,7 @@ class Settings(BaseSettings):
                     "secure secret with at least 32 characters in production environment."
                 )
 
-            # 2. Reject SQLite in production
+            # 2. Reject SQLite in production (PostgreSQL is required)
             if self.DATABASE_URL.startswith("sqlite"):
                 raise ValueError(
                     "Production Database Invariant Violated: SQLite is not permitted in production. "

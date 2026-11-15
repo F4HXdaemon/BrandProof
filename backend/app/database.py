@@ -1,3 +1,4 @@
+import os
 from typing import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -14,6 +15,13 @@ engine_kwargs = {
 
 if db_url.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
+    # Ensure parent directory exists for file-based SQLite databases (e.g. /tmp)
+    if db_url.startswith("sqlite:///"):
+        sqlite_file = db_url.replace("sqlite:///", "")
+        if sqlite_file and sqlite_file != ":memory:":
+            parent_dir = os.path.dirname(os.path.abspath(sqlite_file))
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
 else:
     # PostgreSQL production connection pooling & health checks
     engine_kwargs["pool_size"] = 10
