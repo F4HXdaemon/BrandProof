@@ -1,0 +1,60 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: brandproof-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-brandproof}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-brandproof}
+      POSTGRES_DB: ${POSTGRES_DB:-brandproof}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-brandproof} -d ${POSTGRES_DB:-brandproof}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: brandproof-backend
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-brandproof}:${POSTGRES_PASSWORD:-brandproof}@postgres:5432/${POSTGRES_DB:-brandproof}
+      SECRET_KEY: ${SECRET_KEY:-c0mp1ex_crypt0_pr0duct10n_s3cr3t_k3y_987654321}
+      ALGORITHM: HS256
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: "${DEBUG:-true}"
+      STORAGE_BACKEND: local
+      STORAGE_DIR: /app/storage_data
+      CORS_ORIGINS: '["http://localhost:3000","http://127.0.0.1:3000"]'
+    ports:
+      - "8000:8000"
+    volumes:
+      - storage_data:/app/storage_data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: brandproof-frontend
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  storage_data:

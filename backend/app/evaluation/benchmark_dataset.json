@@ -1,0 +1,92 @@
+[
+  {
+    "id": "bench-001",
+    "title": "Northstar Cloud Enterprise SLA",
+    "text": "Northstar Cloud guarantees 99.999% uptime with zero downtime architecture.",
+    "context": {
+      "product": "Northstar Cloud",
+      "region": "Global",
+      "channel": "Website"
+    },
+    "expected_findings": [
+      {
+        "finding_type": "forbidden_phrase",
+        "expected_match": "guarantees",
+        "severity": "Blocker"
+      },
+      {
+        "finding_type": "numeric_conflict",
+        "expected_match": "99.999%",
+        "severity": "Blocker"
+      }
+    ]
+  },
+  {
+    "id": "bench-002",
+    "title": "Disallowed Brand Casing & Terminology",
+    "text": "Switch your workloads to northstar cloud and enjoy our brand-proof governance tool.",
+    "context": {
+      "product": "Northstar Cloud",
+      "region": "Global",
+      "channel": "Social Media"
+    },
+    "expected_findings": [
+      {
+        "finding_type": "terminology",
+        "expected_match": "northstar cloud",
+        "severity": "Warning"
+      }
+    ]
+  },
+  {
+    "id": "bench-003",
+    "title": "Expired Fact Claim",
+    "text": "Trusted by 10,000 customers worldwide since our early launch.",
+    "context": {
+      "product": "Northstar Cloud",
+      "region": "North America",
+      "channel": "Email"
+    },
+    "expected_findings": [
+      {
+        "finding_type": "expired_fact",
+        "expected_match": "10,000 customers",
+        "severity": "High"
+      }
+    ]
+  },
+  {
+    "id": "bench-004",
+    "title": "Missing Mandatory Financial Disclaimer",
+    "text": "Northstar Cloud offers guaranteed ROI and fixed returns for institutional investors.",
+    "context": {
+      "product": "Northstar Cloud",
+      "region": "North America",
+      "channel": "Financial Report"
+    },
+    "expected_findings": [
+      {
+        "finding_type": "disclaimer",
+        "expected_match": "disclaimer",
+        "severity": "Blocker"
+      }
+    ]
+  },
+  {
+    "id": "bench-005",
+    "title": "WCAG Image Accessibility Non-Compliance",
+    "text": "Check out our architecture diagram: ![](https://assets.northstar.io/arch.png) for full details.",
+    "context": {
+      "product": "Northstar Cloud",
+      "region": "Global",
+      "channel": "Documentation"
+    },
+    "expected_findings": [
+      {
+        "finding_type": "accessibility",
+        "expected_match": "alt",
+        "severity": "Warning"
+      }
+    ]
+  }
+]
