@@ -84,7 +84,9 @@ class Settings(BaseSettings):
             if self.DATABASE_URL == "sqlite:///./brandproof.db" or not self.DATABASE_URL:
                 # Prefer /tmp on Linux/POSIX (Render) or system tempdir on Windows
                 preview_tmp = "/tmp" if (os.path.exists("/tmp") or os.name != "nt") else tempfile.gettempdir()
-                self.DATABASE_URL = f"sqlite:///{os.path.join(preview_tmp, 'brandproof-preview.db').replace('\\', '/')}"
+                db_path = os.path.join(preview_tmp, "brandproof-preview.db")
+                db_path = db_path.replace("\\", "/")
+                self.DATABASE_URL = f"sqlite:///{db_path}"
 
             # 2. Configure ephemeral uploads directory
             default_storage_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage_data")
