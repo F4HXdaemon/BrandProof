@@ -53,17 +53,25 @@ class RegisterRequest(BaseSchema):
 class InviteCreateRequest(BaseSchema):
     email: Optional[EmailStr] = None
     role: Optional[UserRole] = UserRole.CREATOR
+    allowed_roles: Optional[List[UserRole]] = None
     expires_in_days: int = 7
+    max_uses: int = 1
+    requires_approval: bool = False
 
 
 class InviteResponse(BaseSchema):
     invite_token: str
+    invitation_code: Optional[str] = None
     organization_id: str
     organization_name: str
     organization_slug: str
     email: Optional[str] = None
     role: Optional[str] = None
+    allowed_roles: List[str] = []
     expires_at: str
+    max_uses: int = 1
+    use_count: int = 0
+    requires_approval: bool = False
     invite_url: Optional[str] = None
 
 
@@ -71,15 +79,45 @@ class InviteVerifyResponse(BaseSchema):
     organization_id: str
     organization_name: str
     organization_slug: str
+    description: Optional[str] = None
+    logo_url: Optional[str] = None
     email: Optional[str] = None
     role: Optional[str] = None
+    allowed_roles: List[str] = []
     expires_at: Optional[str] = None
+    max_uses: int = 1
+    use_count: int = 0
+    requires_approval: bool = False
     inviter_name: Optional[str] = None
     valid: bool = True
 
 
 class AcceptInvitationRequest(BaseSchema):
     token: str
+    role: Optional[UserRole] = None
+
+
+class ValidateInvitationRequest(BaseSchema):
+    code: str
+
+
+class JoinInvitationRequest(BaseSchema):
+    code: str
+    role: Optional[UserRole] = None
+
+
+class JoinInvitationResponse(BaseSchema):
+    status: str  # "active" | "pending_approval"
+    message: str
+    access_token: Optional[str] = None
+    token_type: Optional[str] = "bearer"
+    user: Optional["UserOut"] = None
+    organization: Optional["OrganizationOut"] = None
+    role: Optional[str] = None
+
+
+class MembershipRequestApprovalRequest(BaseSchema):
+    role: Optional[UserRole] = None
 
 
 class SwitchOrganizationRequest(BaseSchema):
@@ -131,11 +169,16 @@ class OrganizationInvitationOut(BaseSchema):
     organization_id: str
     organization_name: Optional[str] = None
     organization_slug: Optional[str] = None
-    invited_email: str
+    invited_email: Optional[str] = None
     assigned_role: str
+    allowed_roles: List[str] = []
+    invitation_code: Optional[str] = None
     status: str
     expires_at: str
     created_at: str
+    max_uses: int = 1
+    use_count: int = 0
+    requires_approval: bool = False
     inviter_name: Optional[str] = None
     invite_url: Optional[str] = None
     invite_token: Optional[str] = None
@@ -144,7 +187,7 @@ class OrganizationInvitationOut(BaseSchema):
 class UserBase(BaseSchema):
     email: EmailStr
     full_name: str
-    role: UserRole
+    role: Optional[UserRole] = None
     title: Optional[str] = None
     avatar_url: Optional[str] = None
     is_active: bool = True
@@ -152,7 +195,7 @@ class UserBase(BaseSchema):
 
 class UserCreate(UserBase):
     password: str
-    organization_id: str
+    organization_id: Optional[str] = None
 
     @field_validator("password")
     @classmethod
@@ -173,13 +216,15 @@ class UserUpdate(BaseSchema):
 
 
 class UserOut(UserBase, TimestampedSchema):
-    organization_id: str
+    organization_id: Optional[str] = None
 
 
 class OrganizationBase(BaseSchema):
     name: str
     slug: str
     domain: Optional[str] = None
+    description: Optional[str] = None
+    logo_url: Optional[str] = None
     is_active: bool = True
     owner_id: Optional[str] = None
 
@@ -188,11 +233,15 @@ class OrganizationCreate(BaseSchema):
     name: str
     slug: Optional[str] = None
     domain: Optional[str] = None
+    description: Optional[str] = None
+    logo_url: Optional[str] = None
 
 
 class OrganizationUpdate(BaseSchema):
     name: Optional[str] = None
     domain: Optional[str] = None
+    description: Optional[str] = None
+    logo_url: Optional[str] = None
     is_active: Optional[bool] = None
 
 
@@ -202,3 +251,4 @@ class OrganizationOut(OrganizationBase, TimestampedSchema):
 
 TokenResponse.model_rebuild()
 SwitchOrganizationResponse.model_rebuild()
+JoinInvitationResponse.model_rebuild()

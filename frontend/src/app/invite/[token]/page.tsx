@@ -55,7 +55,7 @@ export default function AcceptInvitePage() {
         return;
       }
       try {
-        const info = await api.auth.verifyInvite(token);
+        const info = await api.organizations.validateInvite(token);
         if (!info || !info.valid) {
           setErrorMessage("This invitation is invalid or has expired.");
         } else {
@@ -80,9 +80,17 @@ export default function AcceptInvitePage() {
     if (!token) return;
     setIsAccepting(true);
     try {
-      await acceptInvitation(token);
-      success("Invitation Accepted", `You are now a member of ${invite?.organization_name}!`);
-      router.push("/dashboard");
+      const res = await api.organizations.joinWithInvite({ code: token });
+      if (res.status === "active") {
+        success("Invitation Accepted", `You are now a member of ${invite?.organization_name}!`);
+        router.push("/dashboard");
+      } else {
+        success(
+          "Request Submitted",
+          "Your membership request has been submitted for administrator approval."
+        );
+        router.push("/onboarding");
+      }
     } catch (err: any) {
       error("Could not accept invitation", err.message || "An error occurred");
     } finally {

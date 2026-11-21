@@ -50,7 +50,7 @@ export default function RegisterPage() {
       if (params.get("demo") === "true") {
         populateDemoCredentials();
       }
-      const token = params.get("invite");
+      const token = params.get("invite") || params.get("code");
       if (token) {
         setInviteToken(token);
         verifyInviteToken(token);
@@ -62,7 +62,7 @@ export default function RegisterPage() {
     setVerifyingInvite(true);
     setInviteError(null);
     try {
-      const info = await api.auth.verifyInvite(token);
+      const info = await api.organizations.validateInvite(token);
       if (!info || !info.valid) {
         setVerifiedInvite(null);
         setInviteError("This invitation is invalid or has expired.");
@@ -87,8 +87,8 @@ export default function RegisterPage() {
       errors.fullName = "Full name must be at least 2 characters.";
     }
 
-    // Organization name is required ONLY when intentionally creating a new org (not invitation mode)
-    if (!inviteToken && (!organizationName.trim() || organizationName.trim().length < 2)) {
+    // Organization name is optional on registration. If provided, must be at least 2 characters.
+    if (!inviteToken && organizationName.trim() && organizationName.trim().length < 2) {
       errors.organizationName = "Organization name must be at least 2 characters.";
     }
 
@@ -122,7 +122,9 @@ export default function RegisterPage() {
     try {
       await register({
         full_name: fullName.trim(),
-        organization_name: verifiedInvite ? undefined : organizationName.trim(),
+        organization_name: verifiedInvite
+          ? undefined
+          : (organizationName.trim() || undefined),
         email: email.trim().toLowerCase(),
         password,
         invite_token: verifiedInvite ? inviteToken : undefined,
@@ -255,16 +257,20 @@ export default function RegisterPage() {
         {/* Form is only rendered if not blocked by an unverified invite */}
         {(!inviteToken || verifiedInvite) && (
           <form className="mt-6 space-y-4" onSubmit={handleSubmit} noValidate>
-            {/* Organization Name Field (only if creating a new org) */}
+            {/* Organization Name Field (optional) */}
             {!verifiedInvite && (
               <div>
-                <label htmlFor="organizationName" className="block text-sm font-medium">
-                  Organization name
-                </label>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="organizationName" className="block text-sm font-medium">
+                    Organization name <span className="text-xs text-ink-mute font-normal">(optional)</span>
+                  </label>
+                  <span className="text-[11px] text-ink-soft">
+                    Can choose to join or create later
+                  </span>
+                </div>
                 <input
                   id="organizationName"
                   type="text"
-                  required
                   value={organizationName}
                   onChange={(e) => {
                     setOrganizationName(e.target.value);
@@ -273,13 +279,13 @@ export default function RegisterPage() {
                     }
                   }}
                   className={inputClass}
-                  placeholder="e.g. Acme Corp"
+                  placeholder="e.g. Acme Corp (or leave blank to join a team)"
                 />
                 {fieldErrors.organizationName && (
                   <p className="mt-1 text-xs text-rose-500">{fieldErrors.organizationName}</p>
                 )}
                 <p className="mt-1 text-[11px] text-ink-mute">
-                  Creates a dedicated, isolated governance workspace for your brand.
+                  Leave blank if you plan to join an existing organization with an invitation code.
                 </p>
               </div>
             )}

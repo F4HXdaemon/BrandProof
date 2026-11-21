@@ -17,11 +17,11 @@ class UserRole(str, enum.Enum):
 class User(Base, BaseModelMixin):
     __tablename__ = "users"
 
-    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=False)
-    role = Column(String(50), default=UserRole.CREATOR.value, nullable=False, index=True)
+    role = Column(String(50), default=UserRole.CREATOR.value, nullable=True, index=True)
     title = Column(String(100), nullable=True)
     avatar_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)

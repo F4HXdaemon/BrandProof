@@ -47,11 +47,16 @@ export interface OrganizationInvitation {
   organization_id: string;
   organization_name?: string;
   organization_slug?: string;
-  invited_email: string;
+  invited_email?: string;
   assigned_role: UserRole;
+  allowed_roles?: UserRole[];
+  invitation_code?: string;
   status: string;
   expires_at: string;
   created_at: string;
+  max_uses?: number;
+  use_count?: number;
+  requires_approval?: boolean;
   inviter_name?: string;
   invite_url?: string;
   invite_token?: string;
@@ -71,22 +76,61 @@ export interface InviteInfo {
   organization_id: string;
   organization_name: string;
   organization_slug: string;
+  description?: string;
+  logo_url?: string;
   email?: string;
   role?: string;
+  allowed_roles?: UserRole[];
   expires_at?: string;
+  max_uses?: number;
+  use_count?: number;
+  requires_approval?: boolean;
   inviter_name?: string;
   valid: boolean;
 }
 
 export interface InviteResponse {
   invite_token: string;
+  invitation_code?: string;
   organization_id: string;
   organization_name: string;
   organization_slug: string;
   email?: string;
   role?: string;
+  allowed_roles?: UserRole[];
   expires_at: string;
+  max_uses?: number;
+  use_count?: number;
+  requires_approval?: boolean;
   invite_url?: string;
+}
+
+export interface JoinInvitationPayload {
+  code: string;
+  role?: UserRole;
+}
+
+export interface JoinInvitationResponse {
+  status: "active" | "pending_approval";
+  message: string;
+  access_token?: string;
+  token_type?: string;
+  user?: User;
+  organization?: Organization;
+  role?: UserRole;
+}
+
+export interface CreateInvitePayload {
+  email?: string;
+  role?: UserRole;
+  allowed_roles?: UserRole[];
+  expires_in_days?: number;
+  max_uses?: number;
+  requires_approval?: boolean;
+}
+
+export interface MembershipRequestApprovalPayload {
+  role?: UserRole;
 }
 
 export interface AuthResponse {

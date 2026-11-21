@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from threading import Lock
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.core.security import (
@@ -13,6 +14,7 @@ from app.core.security import (
     create_access_token,
     decode_invite_token,
     hash_invitation_token,
+    normalize_invitation_code,
 )
 from app.core.dependencies import get_current_user
 from app.models.user import User, UserRole
@@ -202,42 +204,73 @@ def register(request: RegisterRequest, http_req: Request, response: Response, db
 
     now = datetime.now(timezone.utc)
 
-    # 3. Handle organization association: either via invitation token OR founding new organization
+    # 3. Handle organization association: either via invitation token OR founding new organization OR independent user
     if request.invite_token:
         # A) JOINING EXISTING ORGANIZATION VIA INVITATION
         raw_token = request.invite_token.strip()
         token_hash = hash_invitation_token(raw_token)
+        normalized_code = normalize_invitation_code(raw_token)
 
-        # First check database-backed invitations
+        # First check database-backed invitations (by hash or human-readable code)
         db_invite = db.query(OrganizationInvitation).filter(
-            OrganizationInvitation.token_hash == token_hash
+            or_(
+                OrganizationInvitation.token_hash == token_hash,
+                OrganizationInvitation.invitation_code == normalized_code,
+            )
         ).first()
 
         invited_org_id = None
         assigned_role = UserRole.CREATOR.value
         invited_by_uid = None
+        requires_approval = False
 
         if db_invite:
-            if db_invite.status != InvitationStatus.PENDING.value:
+            if not db_invite.is_valid:
+                if db_invite.status == InvitationStatus.REVOKED.value:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="This invitation has been revoked by an administrator.",
+                    )
+                if db_invite.is_exhausted:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="This invitation has already been used or has reached its maximum usage limit.",
+                    )
+                if db_invite.is_expired:
+                    db_invite.status = InvitationStatus.EXPIRED.value
+                    db.commit()
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invitation has expired. Please request a new invitation.",
+                    )
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="This invitation has already been used or was revoked.",
+                    detail="This invitation is no longer active.",
                 )
-            if db_invite.is_expired:
-                db_invite.status = InvitationStatus.EXPIRED.value
-                db.commit()
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invitation link has expired. Please request a new invitation.",
-                )
+
             if db_invite.invited_email and db_invite.invited_email.lower() != request.email.lower():
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"This invitation was issued specifically for {db_invite.invited_email}.",
                 )
+
             invited_org_id = db_invite.organization_id
-            assigned_role = db_invite.assigned_role
+            allowed_roles = db_invite.get_allowed_roles_list()
+
+            # Verify requested role against allowed roles
+            if request.role:
+                req_role_val = request.role.value if isinstance(request.role, UserRole) else str(request.role)
+                if req_role_val not in allowed_roles:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Requested role '{req_role_val}' is not permitted by this invitation. Allowed roles: {allowed_roles}",
+                    )
+                assigned_role = req_role_val
+            else:
+                assigned_role = db_invite.assigned_role or allowed_roles[0]
+
             invited_by_uid = db_invite.invited_by_id
+            requires_approval = db_invite.requires_approval
         else:
             # Fallback to legacy JWT invite token decoding
             invite_payload, invite_error = decode_invite_token(raw_token)
@@ -254,6 +287,13 @@ def register(request: RegisterRequest, http_req: Request, response: Response, db
                 )
             invited_org_id = invite_payload.get("org_id")
             assigned_role = UserRole.CREATOR.value
+
+        # SECURITY INVARIANT: Owner role cannot be granted via invitation
+        if assigned_role == UserRole.OWNER.value:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The Owner role cannot be assigned through an invitation.",
+            )
 
         org = db.query(Organization).filter(
             Organization.id == invited_org_id,
@@ -273,47 +313,67 @@ def register(request: RegisterRequest, http_req: Request, response: Response, db
             )
 
         assigned_title = "Team Member"
-        action_name = "USER_JOINED_ORGANIZATION"
 
-        # Create global user
-        user = User(
-            organization_id=org.id,
-            email=request.email.lower(),
-            hashed_password=hash_password(request.password),
-            full_name=request.full_name.strip(),
-            role=assigned_role,
-            title=assigned_title,
-            is_active=True,
-        )
-        db.add(user)
-        db.flush()
+        if requires_approval:
+            # Create user account without active organization access until approved
+            user = User(
+                organization_id=None,
+                email=request.email.lower(),
+                hashed_password=hash_password(request.password),
+                full_name=request.full_name.strip(),
+                role=None,
+                title=assigned_title,
+                is_active=True,
+            )
+            db.add(user)
+            db.flush()
 
-        # Create OrganizationMembership
-        membership = OrganizationMembership(
-            user_id=user.id,
-            organization_id=org.id,
-            role=assigned_role,
-            status=MembershipStatus.ACTIVE.value,
-            joined_at=now,
-            invited_by_id=invited_by_uid,
-        )
-        db.add(membership)
+            membership = OrganizationMembership(
+                user_id=user.id,
+                organization_id=org.id,
+                role=assigned_role,
+                status=MembershipStatus.PENDING_APPROVAL.value,
+                joined_at=now,
+                invited_by_id=invited_by_uid,
+            )
+            db.add(membership)
+            action_name = "MEMBERSHIP_REQUEST_CREATED"
+        else:
+            user = User(
+                organization_id=org.id,
+                email=request.email.lower(),
+                hashed_password=hash_password(request.password),
+                full_name=request.full_name.strip(),
+                role=assigned_role,
+                title=assigned_title,
+                is_active=True,
+            )
+            db.add(user)
+            db.flush()
 
-        if db_invite:
-            db_invite.status = InvitationStatus.ACCEPTED.value
-            db_invite.accepted_by_id = user.id
+            membership = OrganizationMembership(
+                user_id=user.id,
+                organization_id=org.id,
+                role=assigned_role,
+                status=MembershipStatus.ACTIVE.value,
+                joined_at=now,
+                invited_by_id=invited_by_uid,
+            )
+            db.add(membership)
+
+            if db_invite:
+                db_invite.use_count += 1
+                if db_invite.max_uses > 0 and db_invite.use_count >= db_invite.max_uses:
+                    db_invite.status = InvitationStatus.ACCEPTED.value
+                db_invite.accepted_by_id = user.id
+
+            action_name = "USER_JOINED_ORGANIZATION"
 
         db.commit()
         db.refresh(user)
 
-    else:
+    elif request.organization_name and len(request.organization_name.strip()) >= 2:
         # B) FOUNDING A NEW ISOLATED ORGANIZATION
-        if not request.organization_name or len(request.organization_name.strip()) < 2:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Organization name must be at least 2 characters long.",
-            )
-
         org_name = request.organization_name.strip()
         base_slug = _slugify(request.organization_slug or org_name)
         if len(base_slug) < 2:
@@ -342,7 +402,7 @@ def register(request: RegisterRequest, http_req: Request, response: Response, db
         db.add(org)
         db.flush()
 
-        assigned_role = UserRole.ADMIN.value
+        assigned_role = UserRole.OWNER.value
         assigned_title = "Organization Owner"
         action_name = "ORGANIZATION_INITIALIZED"
 
@@ -374,6 +434,24 @@ def register(request: RegisterRequest, http_req: Request, response: Response, db
         db.commit()
         db.refresh(user)
 
+    else:
+        # C) REGISTERING AS INDEPENDENT USER (NO FORCED ORGANISATION CREATION)
+        # The user will choose on onboarding whether to create a new organization or join an existing one.
+        user = User(
+            organization_id=None,
+            email=request.email.lower(),
+            hashed_password=hash_password(request.password),
+            full_name=request.full_name.strip(),
+            role=None,
+            title="User",
+            is_active=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        action_name = "USER_REGISTERED"
+
     access_token = create_access_token(
         subject=user.id,
         extra_claims={
@@ -387,12 +465,12 @@ def register(request: RegisterRequest, http_req: Request, response: Response, db
 
     record_audit_event(
         db=db,
-        organization_id=org.id,
+        organization_id=user.organization_id or "system",
         actor_id=user.id,
         action=action_name,
         entity_type="User",
         entity_id=user.id,
-        metadata={"name": org.name, "admin": user.email, "role": user.role}
+        metadata={"email": user.email, "role": user.role}
     )
 
     return TokenResponse(

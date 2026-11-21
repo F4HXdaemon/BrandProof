@@ -28,6 +28,10 @@ import {
   AuthResponse,
   InviteInfo,
   InviteResponse,
+  JoinInvitationPayload,
+  JoinInvitationResponse,
+  CreateInvitePayload,
+  MembershipRequestApprovalPayload,
   Evidence,
   EvidenceDetail,
   EvidenceStatus,
@@ -336,12 +340,12 @@ export const api = {
           body: JSON.stringify({ new_owner_user_id: newOwnerUserId }),
         }
       ),
-    createInvitation: async (payload: { email?: string; role?: UserRole; expires_in_days?: number }) =>
+    createInvitation: async (payload: CreateInvitePayload) =>
       request<InviteResponse>("/organizations/current/invitations", {
         method: "POST",
         body: JSON.stringify(payload),
       }),
-    createInvite: async (payload: { email?: string; expires_in_days?: number; role?: UserRole }) =>
+    createInvite: async (payload: CreateInvitePayload) =>
       request<InviteResponse>("/organizations/current/invitations", {
         method: "POST",
         body: JSON.stringify(payload),
@@ -355,6 +359,44 @@ export const api = {
       ),
     getMyInvitations: async () =>
       request<OrganizationInvitation[]>("/organizations/my-invitations"),
+    validateInvite: async (codeOrToken: string) =>
+      request<InviteInfo>("/organizations/invitations/validate", {
+        method: "POST",
+        body: JSON.stringify({ code: codeOrToken.trim() }),
+      }),
+    joinWithInvite: async (payload: JoinInvitationPayload) => {
+      const res = await request<JoinInvitationResponse>("/organizations/invitations/join", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      if (res.status === "active" && res.access_token) {
+        setToken(res.access_token);
+        if (res.organization) {
+          setActiveOrgId(res.organization.id);
+        }
+      }
+      return res;
+    },
+    getMembershipRequests: async () =>
+      request<OrganizationMembership[]>("/organizations/current/membership-requests"),
+    approveMembershipRequest: async (
+      membershipId: string,
+      payload?: MembershipRequestApprovalPayload
+    ) =>
+      request<OrganizationMembership>(
+        `/organizations/current/membership-requests/${membershipId}/approve`,
+        {
+          method: "POST",
+          body: JSON.stringify(payload || {}),
+        }
+      ),
+    rejectMembershipRequest: async (membershipId: string) =>
+      request<{ success: boolean; message: string }>(
+        `/organizations/current/membership-requests/${membershipId}/reject`,
+        {
+          method: "POST",
+        }
+      ),
     acceptInvitation: async (token: string) => {
       const res = await request<{
         access_token: string;

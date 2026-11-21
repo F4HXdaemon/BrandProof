@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import Base, get_db
 from app.main import app
-from app.models.organization import Organization, OrganizationMembership
+from app.models.organization import Organization, OrganizationMembership, OrganizationInvitation
 from app.models.user import User, UserRole
 from app.core.security import hash_password, create_access_token
 

@@ -7,6 +7,19 @@ import jwt
 from app.config import settings
 
 
+def generate_invitation_code() -> str:
+    """Generate a clean, unambiguous uppercase alphanumeric invitation code, e.g. BP-8K2M-9P4W"""
+    alphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+    part1 = "".join(secrets.choice(alphabet) for _ in range(4))
+    part2 = "".join(secrets.choice(alphabet) for _ in range(4))
+    return f"BP-{part1}-{part2}"
+
+
+def normalize_invitation_code(code: str) -> str:
+    """Normalize user-entered code by stripping spaces, hyphens, and converting to uppercase."""
+    return code.strip().upper().replace(" ", "").replace("-", "")
+
+
 def generate_invitation_token() -> tuple[str, str]:
     """
     Generates a cryptographically secure, high-entropy invitation token and its SHA-256 hash.

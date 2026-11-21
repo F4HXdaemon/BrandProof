@@ -16,6 +16,8 @@ import {
   Loader2,
   ArrowRightLeft,
   X,
+  KeyRound,
+  CheckCircle2,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -74,16 +76,22 @@ export default function SettingsPage() {
   const [org, setOrg] = useState<Organization | null>(null);
   const [members, setMembers] = useState<OrganizationMembership[]>([]);
   const [invitations, setInvitations] = useState<OrganizationInvitation[]>([]);
+  const [membershipRequests, setMembershipRequests] = useState<OrganizationMembership[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserRole>("Reviewer");
+  const [inviteAllowedRoles, setInviteAllowedRoles] = useState<UserRole[]>(["Reviewer"]);
   const [inviteExpiresDays, setInviteExpiresDays] = useState(7);
+  const [inviteMaxUses, setInviteMaxUses] = useState(1);
+  const [inviteRequiresApproval, setInviteRequiresApproval] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
   const [generatedInviteUrl, setGeneratedInviteUrl] = useState<string | null>(null);
+  const [generatedInviteCode, setGeneratedInviteCode] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   // Transfer ownership modal state
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -93,6 +101,7 @@ export default function SettingsPage() {
   // Action states
   const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null);
   const [revokingInviteId, setRevokingInviteId] = useState<string | null>(null);
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
 
   const isOwner =
     currentOrganization?.is_owner ||
@@ -118,8 +127,12 @@ export default function SettingsPage() {
 
       if (canManageInvites) {
         try {
-          const invData = await api.organizations.getPendingInvitations();
+          const [invData, reqData] = await Promise.all([
+            api.organizations.getPendingInvitations(),
+            api.organizations.getMembershipRequests().catch(() => []),
+          ]);
           setInvitations(invData);
+          setMembershipRequests(reqData);
         } catch {
           // Non-admin may not have access to invites
         }
@@ -171,6 +184,33 @@ export default function SettingsPage() {
     }
   };
 
+  const handleApproveRequest = async (requestId: string, role?: UserRole) => {
+    setProcessingRequestId(requestId);
+    try {
+      await api.organizations.approveMembershipRequest(requestId, role ? { role } : undefined);
+      success("Membership Approved", "The applicant has been granted access to the workspace.");
+      await loadData();
+    } catch (err: any) {
+      error("Approval Failed", err.message || "Could not approve membership request.");
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    if (!window.confirm("Are you sure you want to reject this membership request?")) return;
+    setProcessingRequestId(requestId);
+    try {
+      await api.organizations.rejectMembershipRequest(requestId);
+      success("Request Dismissed", "The membership request has been removed.");
+      await loadData();
+    } catch (err: any) {
+      error("Rejection Failed", err.message || "Could not reject membership request.");
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
   const handleCreateInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsInviting(true);
@@ -178,14 +218,18 @@ export default function SettingsPage() {
       const res = await api.organizations.createInvitation({
         email: inviteEmail.trim() || undefined,
         role: inviteRole,
+        allowed_roles: inviteAllowedRoles.length > 0 ? inviteAllowedRoles : [inviteRole],
         expires_in_days: inviteExpiresDays,
+        max_uses: inviteMaxUses,
+        requires_approval: inviteRequiresApproval,
       });
 
       const fullUrl =
         res.invite_url ||
         `${window.location.origin}/invite/${res.invite_token}`;
       setGeneratedInviteUrl(fullUrl);
-      success("Invitation Generated", "Invitation link created successfully.");
+      setGeneratedInviteCode(res.invitation_code || null);
+      success("Invitation Generated", "Invitation code created successfully.");
       await loadData();
     } catch (err: any) {
       error("Failed to invite member", err.message || "An error occurred");
@@ -240,6 +284,12 @@ export default function SettingsPage() {
     navigator.clipboard.writeText(text);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
+  };
+
+  const copyCodeToClipboard = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
   };
 
   return (
@@ -305,6 +355,79 @@ export default function SettingsPage() {
               </div>
             </Card>
 
+            {/* Pending Membership Requests (Admin / Owner view) */}
+            {isAdminOrOwner && membershipRequests.length > 0 && (
+              <Card className="border-amber-300 bg-amber-50/40">
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-700" />
+                    <CardTitle className="text-amber-950">
+                      Pending Membership Requests ({membershipRequests.length})
+                    </CardTitle>
+                  </div>
+                  <span className="rounded-full bg-amber-200/80 px-2.5 py-0.5 text-[11px] font-semibold text-amber-900 border border-amber-300">
+                    Action Required
+                  </span>
+                </CardHeader>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-amber-200 text-amber-900 font-medium">
+                        <th className="pb-2.5">Applicant</th>
+                        <th className="pb-2.5">Email</th>
+                        <th className="pb-2.5">Requested Role</th>
+                        <th className="pb-2.5">Submitted</th>
+                        <th className="pb-2.5 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-amber-200/60">
+                      {membershipRequests.map((req) => (
+                        <tr key={req.id} className="hover:bg-amber-100/50 transition-colors">
+                          <td className="py-2.5">
+                            <span className="font-medium text-ink block">{req.full_name}</span>
+                          </td>
+                          <td className="py-2.5 font-mono text-[11px] text-ink-soft">{req.email}</td>
+                          <td className="py-2.5">
+                            <span className="px-2 py-0.5 rounded bg-surface text-accent-ink font-semibold text-[11px] border border-line">
+                              {req.role}
+                            </span>
+                          </td>
+                          <td className="py-2.5 text-ink-soft text-[11px]">
+                            {req.joined_at ? new Date(req.joined_at).toLocaleDateString() : "Just now"}
+                          </td>
+                          <td className="py-2.5 text-right space-x-2">
+                            <Button
+                              size="sm"
+                              onClick={() => handleApproveRequest(req.id, req.role)}
+                              disabled={processingRequestId === req.id}
+                              className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                            >
+                              {processingRequestId === req.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Check className="w-3 h-3 mr-1" />
+                              )}
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => handleRejectRequest(req.id)}
+                              disabled={processingRequestId === req.id}
+                              className="text-xs"
+                            >
+                              Reject
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+
             {/* Team Members List */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-3">
@@ -317,14 +440,18 @@ export default function SettingsPage() {
                     size="sm"
                     onClick={() => {
                       setGeneratedInviteUrl(null);
+                      setGeneratedInviteCode(null);
                       setInviteEmail("");
                       setInviteRole("Reviewer");
+                      setInviteAllowedRoles(["Reviewer"]);
+                      setInviteMaxUses(1);
+                      setInviteRequiresApproval(false);
                       setShowInviteModal(true);
                     }}
-                    className="flex items-center gap-1 text-xs"
+                    className="flex items-center gap-1.5 text-xs"
                   >
-                    <UserPlus className="w-3.5 h-3.5" />
-                    Invite Member
+                    <KeyRound className="w-3.5 h-3.5" />
+                    Generate Invitation Code
                   </Button>
                 )}
               </CardHeader>
@@ -430,55 +557,87 @@ export default function SettingsPage() {
               </div>
             </Card>
 
-            {/* Pending Invitations (Admin / Owner view) */}
+            {/* Invitations & Codes (Admin / Owner view) */}
             {isAdminOrOwner && (
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-3">
                   <div className="flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-accent-ink" />
-                    <CardTitle>Pending Invitations ({invitations.length})</CardTitle>
+                    <KeyRound className="w-4 h-4 text-accent-ink" />
+                    <CardTitle>Organisation Invitations &amp; Codes ({invitations.length})</CardTitle>
                   </div>
                   <CardDescription className="text-xs">
-                    Sent invitation links that have not yet been accepted.
+                    Cryptographic invitation tokens and shareable codes for onboarding team members.
                   </CardDescription>
                 </CardHeader>
 
                 {invitations.length === 0 ? (
                   <p className="text-xs text-ink-mute py-4 text-center">
-                    No pending invitations. Click &quot;Invite Member&quot; to send an invite link.
+                    No active invitations. Click &quot;Generate Invitation Code&quot; to issue an invite.
                   </p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
                       <thead>
                         <tr className="border-b border-line text-ink-soft font-medium">
-                          <th className="pb-2.5">Invited Recipient</th>
-                          <th className="pb-2.5">Assigned Role</th>
+                          <th className="pb-2.5">Invitation Code</th>
+                          <th className="pb-2.5">Recipient</th>
+                          <th className="pb-2.5">Permitted Roles</th>
+                          <th className="pb-2.5">Usage</th>
+                          <th className="pb-2.5">Policy</th>
                           <th className="pb-2.5">Expires</th>
-                          <th className="pb-2.5">Invited By</th>
                           <th className="pb-2.5 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-line">
                         {invitations.map((inv) => (
                           <tr key={inv.id} className="hover:bg-sunken/60 transition-colors">
+                            <td className="py-2.5 font-mono text-[11px] font-semibold text-accent-ink">
+                              {inv.invitation_code ? (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-surface border border-accent/20">
+                                  {inv.invitation_code}
+                                  <button
+                                    type="button"
+                                    onClick={() => copyCodeToClipboard(inv.invitation_code!)}
+                                    className="text-ink-mute hover:text-ink"
+                                    title="Copy Code"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                </span>
+                              ) : (
+                                <span className="text-ink-mute italic">Direct Token</span>
+                              )}
+                            </td>
                             <td className="py-2.5 font-mono text-[11px] text-ink">
                               {inv.invited_email || (
-                                <span className="text-ink-mute italic">Anyone with link</span>
+                                <span className="text-ink-mute italic">Anyone with code</span>
                               )}
                             </td>
                             <td className="py-2.5">
                               <span className="px-2 py-0.5 rounded bg-sunken text-accent-ink font-medium text-[11px] border border-line-strong">
-                                {inv.assigned_role}
+                                {inv.allowed_roles && inv.allowed_roles.length > 0
+                                  ? inv.allowed_roles.join(", ")
+                                  : inv.assigned_role}
+                              </span>
+                            </td>
+                            <td className="py-2.5 text-ink-soft text-[11px]">
+                              {inv.use_count ?? 0} / {inv.max_uses === 0 ? "Unlimited" : (inv.max_uses ?? 1)}
+                            </td>
+                            <td className="py-2.5">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                  inv.requires_approval
+                                    ? "bg-amber-100 text-amber-800 border border-amber-200"
+                                    : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                }`}
+                              >
+                                {inv.requires_approval ? "Approval Required" : "Instant Join"}
                               </span>
                             </td>
                             <td className="py-2.5 text-ink-soft text-[11px]">
                               {inv.expires_at
                                 ? new Date(inv.expires_at).toLocaleDateString()
                                 : "—"}
-                            </td>
-                            <td className="py-2.5 text-ink-soft">
-                              {inv.inviter_name || "Admin"}
                             </td>
                             <td className="py-2.5 text-right space-x-2">
                               {inv.invite_token && (
@@ -494,7 +653,7 @@ export default function SettingsPage() {
                                   title="Copy invite URL"
                                 >
                                   <Copy className="w-3 h-3" />
-                                  Copy
+                                  Link
                                 </button>
                               )}
                               <button
@@ -562,10 +721,10 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Invite Member Modal */}
+        {/* Invite Member / Generate Invitation Code Modal */}
         {showInviteModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="w-full max-w-md rounded-xl border border-line bg-surface p-6 shadow-2xl relative">
+            <div className="w-full max-w-lg rounded-xl border border-line bg-surface p-6 shadow-2xl relative">
               <button
                 onClick={() => setShowInviteModal(false)}
                 className="absolute top-4 right-4 text-ink-mute hover:text-ink"
@@ -574,22 +733,22 @@ export default function SettingsPage() {
               </button>
 
               <div className="flex items-center gap-2 mb-1">
-                <UserPlus className="w-5 h-5 text-accent-ink" />
-                <h2 className="text-lg font-serif font-medium text-ink">Invite Team Member</h2>
+                <KeyRound className="w-5 h-5 text-accent-ink" />
+                <h2 className="text-lg font-serif font-medium text-ink">Generate Invitation Code</h2>
               </div>
               <p className="text-xs text-ink-soft mb-4">
-                Invite an existing or new user to join {org?.name}. They will receive a secure token.
+                Create a secure invitation code or shareable link to invite team members into <strong>{org?.name}</strong>.
               </p>
 
-              {!generatedInviteUrl ? (
+              {!generatedInviteUrl && !generatedInviteCode ? (
                 <form onSubmit={handleCreateInvite} className="space-y-4">
                   <div>
                     <label className="block text-xs font-medium text-ink">
-                      Invitee Email Address <span className="text-ink-mute">(recommended)</span>
+                      Invitee Email Address <span className="text-ink-mute">(optional)</span>
                     </label>
                     <input
                       type="email"
-                      placeholder="teammate@company.com"
+                      placeholder="teammate@company.com (leave empty for shareable code)"
                       value={inviteEmail}
                       onChange={(e) => setInviteEmail(e.target.value)}
                       className="mt-1.5 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-mute focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
@@ -599,36 +758,77 @@ export default function SettingsPage() {
                     </p>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-medium text-ink">Assigned Role *</label>
-                    <select
-                      value={inviteRole}
-                      onChange={(e) => setInviteRole(e.target.value as UserRole)}
-                      className="mt-1.5 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
-                    >
-                      {ASSIGNABLE_ROLES.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-ink">Default Assigned Role *</label>
+                      <select
+                        value={inviteRole}
+                        onChange={(e) => {
+                          const r = e.target.value as UserRole;
+                          setInviteRole(r);
+                          setInviteAllowedRoles([r]);
+                        }}
+                        className="mt-1.5 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+                      >
+                        {ASSIGNABLE_ROLES.filter((r) => isOwner || r !== "Admin").map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-ink">Expiration *</label>
+                      <select
+                        value={inviteExpiresDays}
+                        onChange={(e) => setInviteExpiresDays(Number(e.target.value))}
+                        className="mt-1.5 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+                      >
+                        <option value={1}>1 Day</option>
+                        <option value={7}>7 Days (Standard)</option>
+                        <option value={14}>14 Days</option>
+                        <option value={30}>30 Days</option>
+                        <option value={90}>90 Days</option>
+                      </select>
+                    </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-ink">Expiration *</label>
+                    <label className="block text-xs font-medium text-ink">Maximum Uses (Acceptance Limit) *</label>
                     <select
-                      value={inviteExpiresDays}
-                      onChange={(e) => setInviteExpiresDays(Number(e.target.value))}
+                      value={inviteMaxUses}
+                      onChange={(e) => setInviteMaxUses(Number(e.target.value))}
                       className="mt-1.5 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
                     >
-                      <option value={1}>1 Day</option>
-                      <option value={7}>7 Days (Standard)</option>
-                      <option value={14}>14 Days</option>
-                      <option value={30}>30 Days</option>
+                      <option value={1}>Single-use (1 successful join)</option>
+                      <option value={5}>Limited to 5 joins</option>
+                      <option value={10}>Limited to 10 joins</option>
+                      <option value={25}>Limited to 25 joins</option>
+                      <option value={0}>Unlimited joins</option>
                     </select>
                   </div>
 
-                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-line">
+                  <div className="pt-1">
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={inviteRequiresApproval}
+                        onChange={(e) => setInviteRequiresApproval(e.target.checked)}
+                        className="mt-0.5 rounded border-line-strong text-accent focus:ring-accent"
+                      />
+                      <div>
+                        <span className="text-xs font-medium text-ink block">
+                          Require Administrator Approval
+                        </span>
+                        <span className="text-[11px] text-ink-mute block">
+                          When checked, users entering this code submit a membership request instead of joining instantly.
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-4 border-t border-line">
                     <button
                       type="button"
                       onClick={() => setShowInviteModal(false)}
@@ -642,45 +842,71 @@ export default function SettingsPage() {
                       className="flex items-center gap-1.5 text-xs"
                     >
                       {isInviting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                      Generate Invitation Link
+                      Generate Invitation Code
                     </Button>
                   </div>
                 </form>
               ) : (
                 <div className="space-y-4">
-                  <div className="rounded-lg border border-accent/30 bg-accent-soft p-3 text-xs text-ink space-y-1">
-                    <p className="font-semibold text-accent-ink">Invitation Link Ready</p>
+                  <div className="rounded-lg border border-accent/30 bg-accent-soft p-3.5 text-xs text-ink space-y-1">
+                    <p className="font-semibold text-accent-ink">Invitation Generated Successfully</p>
                     <p className="text-ink-soft">
-                      Share this secure link with the invitee. They can sign in or register to join
-                      with the assigned role of <strong>{inviteRole}</strong>.
+                      Share the invitation code or link below. Users joining will receive the role{" "}
+                      <strong>{inviteRole}</strong>.
                     </p>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-medium text-ink">Invitation URL</label>
-                    <div className="mt-1.5 flex items-center gap-2">
-                      <input
-                        type="text"
-                        readOnly
-                        value={generatedInviteUrl}
-                        className="w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-xs text-ink font-mono focus:outline-none"
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => copyToClipboard(generatedInviteUrl)}
-                        className="shrink-0 flex items-center gap-1 text-xs"
-                      >
-                        {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                        {copiedLink ? "Copied" : "Copy"}
-                      </Button>
+                  {generatedInviteCode && (
+                    <div>
+                      <label className="block text-xs font-medium text-ink">Invitation Code</label>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={generatedInviteCode}
+                          className="w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm font-mono font-bold text-accent-ink tracking-wider focus:outline-none"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => copyCodeToClipboard(generatedInviteCode)}
+                          className="shrink-0 flex items-center gap-1 text-xs"
+                        >
+                          {copiedCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          {copiedCode ? "Copied" : "Copy Code"}
+                        </Button>
+                      </div>
                     </div>
-                  </div>
+                  )}
+
+                  {generatedInviteUrl && (
+                    <div>
+                      <label className="block text-xs font-medium text-ink">Direct Invitation Link</label>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={generatedInviteUrl}
+                          className="w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-xs text-ink font-mono focus:outline-none"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => copyToClipboard(generatedInviteUrl)}
+                          className="shrink-0 flex items-center gap-1 text-xs"
+                        >
+                          {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          {copiedLink ? "Copied" : "Copy Link"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-end pt-3 border-t border-line">
                     <Button
                       type="button"
-                      variant="outline"
+                      variant="primary"
                       size="sm"
                       onClick={() => setShowInviteModal(false)}
                     >

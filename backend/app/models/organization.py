@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Boolean, ForeignKey, DateTime, UniqueConstraint
+from sqlalchemy import Column, String, Boolean, ForeignKey, DateTime, UniqueConstraint, Integer
 from sqlalchemy.orm import relationship
 from app.database import Base
 from app.models.base import BaseModelMixin, utc_now
@@ -11,6 +11,7 @@ class MembershipStatus(str, enum.Enum):
     ACTIVE = "active"
     INVITED = "invited"
     SUSPENDED = "suspended"
+    PENDING_APPROVAL = "pending_approval"
 
 
 class InvitationStatus(str, enum.Enum):
@@ -18,6 +19,7 @@ class InvitationStatus(str, enum.Enum):
     ACCEPTED = "accepted"
     REVOKED = "revoked"
     EXPIRED = "expired"
+    EXHAUSTED = "exhausted"
 
 
 class Organization(Base, BaseModelMixin):
@@ -26,6 +28,8 @@ class Organization(Base, BaseModelMixin):
     name = Column(String(255), nullable=False, index=True)
     slug = Column(String(100), unique=True, nullable=False, index=True)
     domain = Column(String(255), nullable=True)
+    description = Column(String(1000), nullable=True)
+    logo_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     owner_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL", use_alter=True), nullable=True, index=True)
 
@@ -78,6 +82,11 @@ class OrganizationInvitation(Base, BaseModelMixin):
     organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     invited_email = Column(String(255), nullable=True, index=True)
     assigned_role = Column(String(50), default=UserRole.CREATOR.value, nullable=False)
+    allowed_roles = Column(String(255), nullable=True)
+    invitation_code = Column(String(64), nullable=True, index=True)
+    max_uses = Column(Integer, default=1, nullable=False)
+    use_count = Column(Integer, default=0, nullable=False)
+    requires_approval = Column(Boolean, default=False, nullable=False)
     token_hash = Column(String(64), unique=True, nullable=False, index=True)
     expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
     status = Column(String(50), default=InvitationStatus.PENDING.value, nullable=False, index=True)
@@ -94,3 +103,22 @@ class OrganizationInvitation(Base, BaseModelMixin):
         now = datetime.now(timezone.utc)
         exp = self.expires_at if self.expires_at.tzinfo else self.expires_at.replace(tzinfo=timezone.utc)
         return exp < now
+
+    @property
+    def is_exhausted(self) -> bool:
+        return self.max_uses > 0 and self.use_count >= self.max_uses
+
+    @property
+    def is_valid(self) -> bool:
+        return (
+            self.status == InvitationStatus.PENDING.value
+            and not self.is_expired
+            and not self.is_exhausted
+        )
+
+    def get_allowed_roles_list(self) -> list[str]:
+        if self.allowed_roles:
+            roles = [r.strip() for r in self.allowed_roles.split(",") if r.strip()]
+            if roles:
+                return roles
+        return [self.assigned_role] if self.assigned_role else ["Creator"]
