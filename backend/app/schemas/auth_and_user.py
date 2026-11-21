@@ -1,4 +1,5 @@
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime
 from pydantic import EmailStr, field_validator
 from app.schemas.common import BaseSchema, TimestampedSchema
 from app.models.user import UserRole
@@ -51,6 +52,7 @@ class RegisterRequest(BaseSchema):
 
 class InviteCreateRequest(BaseSchema):
     email: Optional[EmailStr] = None
+    role: Optional[UserRole] = UserRole.CREATOR
     expires_in_days: int = 7
 
 
@@ -60,7 +62,9 @@ class InviteResponse(BaseSchema):
     organization_name: str
     organization_slug: str
     email: Optional[str] = None
+    role: Optional[str] = None
     expires_at: str
+    invite_url: Optional[str] = None
 
 
 class InviteVerifyResponse(BaseSchema):
@@ -68,8 +72,73 @@ class InviteVerifyResponse(BaseSchema):
     organization_name: str
     organization_slug: str
     email: Optional[str] = None
+    role: Optional[str] = None
+    expires_at: Optional[str] = None
+    inviter_name: Optional[str] = None
     valid: bool = True
 
+
+class AcceptInvitationRequest(BaseSchema):
+    token: str
+
+
+class SwitchOrganizationRequest(BaseSchema):
+    organization_id: str
+
+
+class SwitchOrganizationResponse(BaseSchema):
+    access_token: str
+    token_type: str = "bearer"
+    user: "UserOut"
+    organization: "OrganizationOut"
+    role: str
+
+
+class UserOrganizationOut(BaseSchema):
+    id: str
+    name: str
+    slug: str
+    domain: Optional[str] = None
+    role: str
+    is_current: bool = False
+    is_owner: bool = False
+    joined_at: str
+
+
+class OrganizationMembershipOut(BaseSchema):
+    id: str
+    user_id: str
+    full_name: str
+    email: str
+    role: str
+    title: Optional[str] = None
+    avatar_url: Optional[str] = None
+    status: str
+    joined_at: str
+    is_owner: bool = False
+
+
+class MemberRoleUpdateRequest(BaseSchema):
+    role: UserRole
+
+
+class TransferOwnershipRequest(BaseSchema):
+    new_owner_user_id: str
+
+
+class OrganizationInvitationOut(BaseSchema):
+    id: str
+    organization_id: str
+    organization_name: Optional[str] = None
+    organization_slug: Optional[str] = None
+    invited_email: str
+    assigned_role: str
+    status: str
+    expires_at: str
+    created_at: str
+    inviter_name: Optional[str] = None
+    invite_url: Optional[str] = None
+    invite_token: Optional[str] = None
 
 
 class UserBase(BaseSchema):
@@ -112,6 +181,7 @@ class OrganizationBase(BaseSchema):
     slug: str
     domain: Optional[str] = None
     is_active: bool = True
+    owner_id: Optional[str] = None
 
 
 class OrganizationCreate(BaseSchema):
@@ -131,3 +201,4 @@ class OrganizationOut(OrganizationBase, TimestampedSchema):
 
 
 TokenResponse.model_rebuild()
+SwitchOrganizationResponse.model_rebuild()

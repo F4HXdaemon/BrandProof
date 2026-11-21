@@ -1,10 +1,12 @@
 from typing import Generator, List, Optional
+from datetime import datetime, timezone
 from fastapi import Depends, HTTPException, Request, UploadFile, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.database import SessionLocal, get_db
 from app.core.security import decode_access_token, decode_access_token_with_error
 from app.models.user import User, UserRole
+from app.models.organization import Organization, OrganizationMembership, MembershipStatus
 
 security_scheme = HTTPBearer(auto_error=False)
 
@@ -39,6 +41,18 @@ def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
     db: Session = Depends(get_db)
 ) -> User:
+    """
+    Authenticates the user and resolves their active organization membership.
+    Multi-Tenant Security Enforcement:
+    1. Decodes JWT token and validates signature and expiration.
+    2. Retrieves global user account.
+    3. Resolves requested organization:
+       - Uses X-Organization-Id header if provided by client.
+       - Otherwise falls back to token claim org_id or default organization.
+    4. Validates that the user has an ACTIVE OrganizationMembership in that organization.
+       - Rejects unauthorized organization IDs with 403 Forbidden.
+    5. Sets dynamic context on user: organization_id, role, and current_membership.
+    """
     raw_token = None
     if credentials and credentials.credentials:
         raw_token = credentials.credentials
@@ -81,14 +95,105 @@ def get_current_user(
             detail="User account is deactivated",
         )
 
+    # Multi-tenant organization resolution
+    header_org_id = request.headers.get("x-organization-id") if request else None
+    token_org_id = payload.get("org_id")
+    target_org_id = header_org_id or token_org_id
+
+    membership: Optional[OrganizationMembership] = None
+
+    if header_org_id:
+        # If client explicitly specified an organization header, verify strictly
+        membership = db.query(OrganizationMembership).filter(
+            OrganizationMembership.user_id == user.id,
+            OrganizationMembership.organization_id == header_org_id,
+            OrganizationMembership.status == MembershipStatus.ACTIVE.value
+        ).first()
+        if not membership:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You do not have an active membership in the requested organization.",
+            )
+    elif token_org_id:
+        # Look up membership matching token claim
+        membership = db.query(OrganizationMembership).filter(
+            OrganizationMembership.user_id == user.id,
+            OrganizationMembership.organization_id == token_org_id,
+            OrganizationMembership.status == MembershipStatus.ACTIVE.value
+        ).first()
+
+    # Fallback to user's first active membership if none resolved yet
+    if not membership:
+        membership = db.query(OrganizationMembership).filter(
+            OrganizationMembership.user_id == user.id,
+            OrganizationMembership.status == MembershipStatus.ACTIVE.value
+        ).first()
+
+    # Backward compatibility safeguard for tests/fixtures that define user.organization_id directly
+    if not membership and user.organization_id:
+        membership = db.query(OrganizationMembership).filter(
+            OrganizationMembership.user_id == user.id,
+            OrganizationMembership.organization_id == user.organization_id
+        ).first()
+        if not membership:
+            membership = OrganizationMembership(
+                user_id=user.id,
+                organization_id=user.organization_id,
+                role=user.role or UserRole.CREATOR.value,
+                status=MembershipStatus.ACTIVE.value,
+                joined_at=user.created_at or datetime.now(timezone.utc),
+            )
+            db.add(membership)
+            db.commit()
+            db.refresh(membership)
+
+    if membership:
+        # Ensure the organization itself is active
+        org = db.query(Organization).filter(
+            Organization.id == membership.organization_id,
+            Organization.is_active.is_(True)
+        ).first()
+        if not org:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="The organization associated with this session is inactive or does not exist.",
+            )
+        # Dynamically attach organization and role to current user for the scope of this request
+        user.organization_id = membership.organization_id
+        user.role = membership.role
+        user.current_membership = membership
+        user.current_organization = org
+
     return user
 
 
 def require_roles(allowed_roles: List[UserRole]):
-    """Role-Based Access Control (RBAC) dependency factory."""
+    """
+    Role-Based Access Control (RBAC) dependency factory.
+    Enforces organizational role hierarchy:
+    - OWNER: Inherits full authority across the organization.
+    - ADMIN: Inherits management authority for operations requiring Admin or lower roles.
+    - Specific roles: Verified against current membership role in active organization.
+    """
     def role_checker(current_user: User = Depends(get_current_user)) -> User:
         allowed_values = [r.value if isinstance(r, UserRole) else str(r) for r in allowed_roles]
-        if current_user.role not in allowed_values and current_user.role != UserRole.ADMIN.value:
+
+        # Owner has full control over all operations
+        if current_user.role == UserRole.OWNER.value:
+            return current_user
+
+        # Admin has authority unless action strictly requires Owner
+        if current_user.role == UserRole.ADMIN.value:
+            # If the requirement strictly requires ONLY Owner, Admin is not permitted
+            if allowed_values == [UserRole.OWNER.value]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access forbidden: This action strictly requires Organization Owner privileges.",
+                )
+            return current_user
+
+        # User's organization role must be explicitly in allowed roles
+        if current_user.role not in allowed_values:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access forbidden: Role '{current_user.role}' lacks permission for this action. Required: {allowed_values}",

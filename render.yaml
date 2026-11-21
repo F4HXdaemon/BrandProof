@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: brandproof-backend
+    env: python
+    region: oregon
+    plan: starter
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt && alembic upgrade head"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      # Neon PostgreSQL Pooled Connection (used by FastAPI runtime for pooled query execution via PgBouncer)
+      - key: DATABASE_URL
+        sync: false
+      # Neon PostgreSQL Direct Unpooled Connection (used by Alembic for DDL migrations)
+      - key: DIRECT_DATABASE_URL
+        sync: false
+      # 256-bit cryptographically secure JWT secret
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 1440
+      # Object Storage (local storage or S3 bucket)
+      - key: STORAGE_BACKEND
+        value: local
+      # Allowed CORS Origins (Vercel Production Frontend & Local Dev)
+      - key: CORS_ORIGINS
+        value: "https://brand-proof-chi.vercel.app,http://localhost:3000"
+      # Security Invariants
+      - key: ENABLE_DEMO_MODE
+        value: false
+      - key: ENABLE_DEMO_RESET
+        value: false

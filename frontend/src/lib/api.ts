@@ -1,5 +1,9 @@
 import {
   User,
+  UserRole,
+  UserOrganization,
+  OrganizationMembership,
+  OrganizationInvitation,
   DashboardData,
   Fact,
   Guideline,
@@ -81,18 +85,38 @@ export function setToken(token: string) {
   }
 }
 
+export function getActiveOrgId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("brandproof_active_org_id");
+}
+
+export function setActiveOrgId(orgId: string | null) {
+  if (typeof window !== "undefined") {
+    if (orgId) {
+      localStorage.setItem("brandproof_active_org_id", orgId);
+    } else {
+      localStorage.removeItem("brandproof_active_org_id");
+    }
+  }
+}
+
 export function removeToken() {
   if (typeof window !== "undefined") {
     localStorage.removeItem("brandproof_token");
+    localStorage.removeItem("brandproof_active_org_id");
     document.cookie = "brandproof_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
   }
 }
 
 async function downloadBlob(endpoint: string, fallbackFilename: string = "download"): Promise<void> {
   const token = getToken();
+  const activeOrgId = getActiveOrgId();
   const headers = new Headers();
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
+  }
+  if (activeOrgId) {
+    headers.set("X-Organization-Id", activeOrgId);
   }
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
   const url = `${getApiBase()}${cleanEndpoint}`;
@@ -127,6 +151,7 @@ async function request<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const token = getToken();
+  const activeOrgId = getActiveOrgId();
   const headers = new Headers(options.headers || {});
 
   if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
@@ -134,6 +159,9 @@ async function request<T>(
   }
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
+  }
+  if (activeOrgId && !headers.has("X-Organization-Id")) {
+    headers.set("X-Organization-Id", activeOrgId);
   }
 
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
@@ -223,12 +251,97 @@ export const api = {
   // Organizations
   organizations: {
     getCurrent: async () => request<Organization>("/organizations/current"),
-    getMembers: async () => request<User[]>("/organizations/current/members"),
-    createInvite: async (payload: { email?: string; expires_in_days?: number }) =>
-      request<InviteResponse>("/organizations/current/invites", {
+    updateCurrent: async (data: Partial<Organization>) =>
+      request<Organization>("/organizations/current", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+    getMyOrganizations: async () =>
+      request<UserOrganization[]>("/organizations/my-organizations"),
+    switchOrganization: async (orgId: string) => {
+      const res = await request<{
+        access_token: string;
+        token_type: string;
+        user: User;
+        organization: Organization;
+        role: UserRole;
+      }>("/organizations/switch", {
+        method: "POST",
+        body: JSON.stringify({ organization_id: orgId }),
+      });
+      setToken(res.access_token);
+      setActiveOrgId(orgId);
+      return res;
+    },
+    createOrganization: async (data: { name: string; slug?: string; domain?: string }) => {
+      const res = await request<{
+        access_token: string;
+        token_type: string;
+        user: User;
+        organization: Organization;
+        role: UserRole;
+      }>("/organizations/create", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+      setToken(res.access_token);
+      setActiveOrgId(res.organization.id);
+      return res;
+    },
+    getMembers: async () =>
+      request<OrganizationMembership[]>("/organizations/current/members"),
+    updateMemberRole: async (membershipId: string, role: UserRole) =>
+      request<OrganizationMembership>(`/organizations/current/members/${membershipId}`, {
+        method: "PUT",
+        body: JSON.stringify({ role }),
+      }),
+    removeMember: async (membershipId: string) =>
+      request<{ success: boolean; message: string }>(
+        `/organizations/current/members/${membershipId}`,
+        { method: "DELETE" }
+      ),
+    transferOwnership: async (newOwnerUserId: string) =>
+      request<{ success: boolean; message: string; new_owner_id: string }>(
+        "/organizations/current/transfer-ownership",
+        {
+          method: "POST",
+          body: JSON.stringify({ new_owner_user_id: newOwnerUserId }),
+        }
+      ),
+    createInvitation: async (payload: { email?: string; role?: UserRole; expires_in_days?: number }) =>
+      request<InviteResponse>("/organizations/current/invitations", {
         method: "POST",
         body: JSON.stringify(payload),
       }),
+    createInvite: async (payload: { email?: string; expires_in_days?: number; role?: UserRole }) =>
+      request<InviteResponse>("/organizations/current/invitations", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    getPendingInvitations: async () =>
+      request<OrganizationInvitation[]>("/organizations/current/invitations"),
+    revokeInvitation: async (invitationId: string) =>
+      request<{ success: boolean; message: string }>(
+        `/organizations/current/invitations/${invitationId}`,
+        { method: "DELETE" }
+      ),
+    getMyInvitations: async () =>
+      request<OrganizationInvitation[]>("/organizations/my-invitations"),
+    acceptInvitation: async (token: string) => {
+      const res = await request<{
+        access_token: string;
+        token_type: string;
+        user: User;
+        organization: Organization;
+        role: UserRole;
+      }>("/organizations/invitations/accept", {
+        method: "POST",
+        body: JSON.stringify({ token }),
+      });
+      setToken(res.access_token);
+      setActiveOrgId(res.organization.id);
+      return res;
+    },
   },
 
   // Dashboard

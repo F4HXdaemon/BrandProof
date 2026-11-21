@@ -1,7 +1,7 @@
 import os
 import json
 import tempfile
-from typing import List, Union
+from typing import List, Union, Optional
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -13,8 +13,15 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
 
-    # Database
+    # Database Configuration (Neon PostgreSQL in Production; SQLite in Dev/Test)
     DATABASE_URL: str = "sqlite:///./brandproof.db"
+    DIRECT_DATABASE_URL: Optional[str] = None
+
+    # Database Connection Pooling (optimized for Neon serverless PgBouncer pooler)
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_RECYCLE: int = 300
+    DB_POOL_TIMEOUT: int = 30
 
     # Security
     SECRET_KEY: str = "brandproof-super-secure-production-ready-jwt-secret-key-replace-in-prod"
@@ -43,13 +50,23 @@ class Settings(BaseSettings):
     ENABLE_DEMO_RESET: bool = False
     ENABLE_DEMO_MODE: bool = False
 
-    @field_validator("DATABASE_URL", mode="before")
+    @field_validator("DATABASE_URL", "DIRECT_DATABASE_URL", mode="before")
     @classmethod
-    def assemble_db_connection(cls, v: str) -> str:
-        """Fix Render's postgres:// prefix to standard postgresql:// for SQLAlchemy."""
-        if isinstance(v, str) and v.startswith("postgres://"):
-            return v.replace("postgres://", "postgresql://", 1)
-        return v
+    def assemble_db_connection(cls, v: Optional[str]) -> Optional[str]:
+        """Normalize Render/Neon postgres:// prefix to postgresql:// and preserve SSL."""
+        if not v or not isinstance(v, str):
+            return v
+        cleaned = v.strip()
+        if cleaned.startswith("postgres://"):
+            cleaned = cleaned.replace("postgres://", "postgresql://", 1)
+
+        # Enforce sslmode=require for cloud PostgreSQL (Neon, Render, Supabase, RDS)
+        if cleaned.startswith("postgresql://") or cleaned.startswith("postgresql+"):
+            is_local = "localhost" in cleaned or "127.0.0.1" in cleaned or "@postgres:" in cleaned
+            if not is_local and "sslmode=" not in cleaned and "ssl=" not in cleaned:
+                delimiter = "&" if "?" in cleaned else "?"
+                cleaned = f"{cleaned}{delimiter}sslmode=require"
+        return cleaned
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

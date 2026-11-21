@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, Menu, X } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
+import { OrgSwitcher } from "@/components/organization/org-switcher";
 import { UserRole } from "@/lib/types";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -92,10 +93,13 @@ export function TopBar() {
 
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-paper">
-      <div className="mx-auto flex h-14 max-w-7xl items-center gap-8 px-6">
-        <Link href="/dashboard" className="font-serif text-xl font-medium tracking-tight text-ink">
-          BrandProof
-        </Link>
+      <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-6">
+        <div className="flex items-center gap-3 shrink-0">
+          <Link href="/dashboard" className="font-serif text-xl font-medium tracking-tight text-ink">
+            BrandProof
+          </Link>
+          <OrgSwitcher />
+        </div>
 
         {/* Desktop navigation */}
         <nav className="hidden md:flex items-center gap-6 flex-1">

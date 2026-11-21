@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import Base, get_db
 from app.main import app
-from app.models.organization import Organization
+from app.models.organization import Organization, OrganizationMembership
 from app.models.user import User, UserRole
 from app.core.security import hash_password, create_access_token
 
@@ -81,6 +81,15 @@ def admin_user(db_session, test_org):
     db_session.add(user)
     db_session.commit()
     db_session.refresh(user)
+    mem = OrganizationMembership(
+        user_id=user.id,
+        organization_id=test_org.id,
+        role=UserRole.ADMIN.value,
+        status="active"
+    )
+    db_session.add(mem)
+    test_org.owner_id = user.id
+    db_session.commit()
     return user
 
 
@@ -97,6 +106,14 @@ def creator_user(db_session, test_org):
     db_session.add(user)
     db_session.commit()
     db_session.refresh(user)
+    mem = OrganizationMembership(
+        user_id=user.id,
+        organization_id=test_org.id,
+        role=UserRole.CREATOR.value,
+        status="active"
+    )
+    db_session.add(mem)
+    db_session.commit()
     return user
 
 
@@ -113,6 +130,14 @@ def reviewer_user(db_session, test_org):
     db_session.add(user)
     db_session.commit()
     db_session.refresh(user)
+    mem = OrganizationMembership(
+        user_id=user.id,
+        organization_id=test_org.id,
+        role=UserRole.REVIEWER.value,
+        status="active"
+    )
+    db_session.add(mem)
+    db_session.commit()
     return user
 
 

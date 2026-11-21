@@ -16,12 +16,25 @@ import app.models  # Ensure all models are registered
 
 config = context.config
 
-db_url = settings.DATABASE_URL
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+# Direct unpooled connection URL takes priority for Alembic migrations,
+# preventing transaction conflicts with Neon PgBouncer transaction pooling.
+migration_url = (
+    getattr(settings, "DIRECT_DATABASE_URL", None)
+    or os.environ.get("DIRECT_DATABASE_URL")
+    or settings.DATABASE_URL
+)
+if migration_url.startswith("postgres://"):
+    migration_url = migration_url.replace("postgres://", "postgresql://", 1)
 
-# Override sqlalchemy.url with app settings DATABASE_URL
-config.set_main_option("sqlalchemy.url", db_url)
+# Enforce sslmode=require for non-local PostgreSQL connections
+if migration_url.startswith("postgresql://") or migration_url.startswith("postgresql+"):
+    is_local = "localhost" in migration_url or "127.0.0.1" in migration_url or "@postgres:" in migration_url
+    if not is_local and "sslmode=" not in migration_url and "ssl=" not in migration_url:
+        delimiter = "&" if "?" in migration_url else "?"
+        migration_url = f"{migration_url}{delimiter}sslmode=require"
+
+# Override sqlalchemy.url with the determined migration URL
+config.set_main_option("sqlalchemy.url", migration_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -44,17 +57,22 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = db_url
+    configuration["sqlalchemy.url"] = migration_url
 
     connect_args = {}
-    if db_url.startswith("sqlite"):
+    if migration_url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
-        if db_url.startswith("sqlite:///"):
-            sqlite_file = db_url.replace("sqlite:///", "")
+        if migration_url.startswith("sqlite:///"):
+            sqlite_file = migration_url.replace("sqlite:///", "")
             if sqlite_file and sqlite_file != ":memory:":
                 parent_dir = os.path.dirname(os.path.abspath(sqlite_file))
                 if parent_dir:
                     os.makedirs(parent_dir, exist_ok=True)
+    else:
+        if "sslmode" not in migration_url and "ssl=" not in migration_url:
+            is_local = "localhost" in migration_url or "127.0.0.1" in migration_url or "@postgres:" in migration_url
+            if not is_local:
+                connect_args["sslmode"] = "require"
 
     connectable = engine_from_config(
         configuration,

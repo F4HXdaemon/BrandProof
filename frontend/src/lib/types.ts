@@ -1,9 +1,10 @@
 export type UserRole =
-  | "Creator"
-  | "Reviewer"
+  | "Owner"
+  | "Admin"
   | "Brand Manager"
   | "Fact Owner"
-  | "Admin";
+  | "Reviewer"
+  | "Creator";
 
 export interface User {
   id: string;
@@ -15,6 +16,45 @@ export interface User {
   is_active: boolean;
   organization_id: string;
   created_at: string;
+}
+
+export interface UserOrganization {
+  id: string;
+  name: string;
+  slug: string;
+  domain?: string;
+  role: UserRole;
+  is_current: boolean;
+  is_owner: boolean;
+  joined_at: string;
+}
+
+export interface OrganizationMembership {
+  id: string;
+  user_id: string;
+  full_name: string;
+  email: string;
+  role: UserRole;
+  title?: string;
+  avatar_url?: string;
+  status: string;
+  joined_at: string;
+  is_owner: boolean;
+}
+
+export interface OrganizationInvitation {
+  id: string;
+  organization_id: string;
+  organization_name?: string;
+  organization_slug?: string;
+  invited_email: string;
+  assigned_role: UserRole;
+  status: string;
+  expires_at: string;
+  created_at: string;
+  inviter_name?: string;
+  invite_url?: string;
+  invite_token?: string;
 }
 
 export interface RegisterPayload {
@@ -32,6 +72,9 @@ export interface InviteInfo {
   organization_name: string;
   organization_slug: string;
   email?: string;
+  role?: string;
+  expires_at?: string;
+  inviter_name?: string;
   valid: boolean;
 }
 
@@ -41,7 +84,9 @@ export interface InviteResponse {
   organization_name: string;
   organization_slug: string;
   email?: string;
+  role?: string;
   expires_at: string;
+  invite_url?: string;
 }
 
 export interface AuthResponse {
@@ -56,6 +101,7 @@ export interface Organization {
   slug: string;
   domain?: string;
   is_active: boolean;
+  owner_id?: string;
   created_at: string;
 }
 

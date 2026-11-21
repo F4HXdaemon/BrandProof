@@ -44,7 +44,7 @@ def upgrade() -> None:
         sa.Column('region_scope', sa.String(length=100), nullable=False, server_default='Global'),
         sa.Column('channel_scope', sa.String(length=100), nullable=False, server_default='All'),
         sa.Column('status', sa.String(length=50), nullable=False, server_default='Approved'),
-        sa.Column('active', sa.Boolean(), nullable=False, server_default=sa.text('1')),
+        sa.Column('active', sa.Boolean(), nullable=False, server_default=sa.sql.expression.true()),
         sa.ForeignKeyConstraint(['organization_id'], ['organizations.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
@@ -101,7 +101,7 @@ def upgrade() -> None:
     # 6. Approvals
     with op.batch_alter_table('approvals') as batch_op:
         batch_op.add_column(sa.Column('document_version_id', sa.String(length=36), nullable=True))
-        batch_op.add_column(sa.Column('is_override', sa.Boolean(), nullable=False, server_default=sa.text('0')))
+        batch_op.add_column(sa.Column('is_override', sa.Boolean(), nullable=False, server_default=sa.sql.expression.false()))
         batch_op.add_column(sa.Column('override_reason', sa.Text(), nullable=True))
         batch_op.add_column(sa.Column('override_finding_ids', sa.JSON(), nullable=False, server_default='[]'))
         batch_op.create_foreign_key('fk_approvals_doc_ver', 'document_versions', ['document_version_id'], ['id'], ondelete='SET NULL')
@@ -117,7 +117,7 @@ def upgrade() -> None:
         sa.Column('finding_id', sa.String(length=36), nullable=True),
         sa.Column('author_id', sa.String(length=36), nullable=True),
         sa.Column('text', sa.Text(), nullable=False),
-        sa.Column('resolved', sa.Boolean(), nullable=False, server_default=sa.text('0')),
+        sa.Column('resolved', sa.Boolean(), nullable=False, server_default=sa.sql.expression.false()),
         sa.ForeignKeyConstraint(['organization_id'], ['organizations.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['review_id'], ['reviews.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['finding_id'], ['findings.id'], ondelete='CASCADE'),

@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from app.database import get_db
+from app.database import get_db, check_db_health, engine
 from app.config import settings
 
 logger = logging.getLogger("brandproof.health")
@@ -29,9 +29,11 @@ def health_check(db: Session = Depends(get_db)):
             }
         )
 
+    dialect_name = engine.dialect.name
     res = {
         "status": "healthy",
         "database": db_status,
+        "database_dialect": dialect_name,
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
     }
@@ -42,3 +44,22 @@ def health_check(db: Session = Depends(get_db)):
             "Data resets when Render Free instance spins down due to inactivity."
         )
     return res
+
+
+@router.get("/health/db")
+def database_health_check():
+    """
+    Detailed database health check verifying connection pool health and vitality
+    without exposing connection strings, hosts, credentials, or sensitive configuration.
+    """
+    health = check_db_health()
+    if not health.get("connected", False):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "status": "unhealthy",
+                "database": "unreachable",
+                "error": health.get("error", "Database connection check failed"),
+            }
+        )
+    return health

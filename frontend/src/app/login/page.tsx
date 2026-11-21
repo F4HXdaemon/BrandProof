@@ -219,6 +219,7 @@ export default function LoginPage() {
             <ul className="mt-3 divide-y divide-line border-y border-line">
               {demoUsers.map((u) => {
                 const roleEmailMap: Record<UserRole, string> = {
+                  Owner: "admin@northstarcloud.com",
                   Admin: "admin@northstarcloud.com",
                   "Brand Manager": "brandmanager@northstarcloud.com",
                   "Fact Owner": "factowner@northstarcloud.com",

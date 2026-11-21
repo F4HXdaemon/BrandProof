@@ -1,8 +1,26 @@
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Union
 import bcrypt
 import jwt
 from app.config import settings
+
+
+def generate_invitation_token() -> tuple[str, str]:
+    """
+    Generates a cryptographically secure, high-entropy invitation token and its SHA-256 hash.
+    The raw token is provided to the user in the invitation link.
+    Only the SHA-256 hash is persisted in the database, preventing token leakage.
+    """
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hash_invitation_token(raw_token)
+    return raw_token, token_hash
+
+
+def hash_invitation_token(raw_token: str) -> str:
+    """Computes a SHA-256 hash of a raw invitation token for database storage and verification."""
+    return hashlib.sha256(raw_token.strip().encode("utf-8")).hexdigest()
 
 
 def hash_password(password: str) -> str:
