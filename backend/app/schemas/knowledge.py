@@ -207,3 +207,19 @@ class CsvImportResponse(BaseSchema):
     errors: List[str] = []
     failed_count: int = 0
     imported_items: List[Dict[str, Any]] = []
+
+
+class KnowledgeExtractionResponse(BaseSchema):
+    evidence_id: str
+    filename: str
+    file_type: str
+    file_size: int
+    file_hash: Optional[str] = None
+    extracted_text: str
+    word_count: int
+    char_count: int
+    suggested_facts: List[Dict[str, Any]] = []
+    suggested_guidelines: List[Dict[str, Any]] = []
+    suggested_terms: List[Dict[str, Any]] = []
+    suggested_rules: List[Dict[str, Any]] = []
+

@@ -16,7 +16,7 @@ from app.services.storage import get_storage, StorageError
 from app.services.audit_service import record_audit_event
 
 MAX_EVIDENCE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB
-ALLOWED_EVIDENCE_EXTENSIONS = {".pdf", ".docx", ".txt", ".text", ".md", ".markdown", ".png", ".jpg", ".jpeg"}
+ALLOWED_EVIDENCE_EXTENSIONS = {".pdf", ".docx", ".txt", ".text", ".md", ".markdown", ".png", ".jpg", ".jpeg", ".webp"}
 
 
 class EvidenceValidationError(ValueError):
@@ -91,6 +91,19 @@ def validate_file_content(file_bytes: bytes, filename: str, declared_content_typ
             raise EvidenceValidationError(f"Corrupted or unreadable JPEG image: {str(e)}")
         return "image/jpeg", ext
 
+    # 3b. WEBP
+    elif ext == ".webp":
+        if not (file_bytes.startswith(b"RIFF") and b"WEBP" in file_bytes[:16]):
+            raise EvidenceValidationError("Invalid WEBP file: Header does not match WEBP signature.")
+        try:
+            with Image.open(io.BytesIO(file_bytes)) as img:
+                img.verify()
+                if img.format != "WEBP":
+                    raise EvidenceValidationError(f"Declared WEBP but image format is {img.format}.")
+        except Exception as e:
+            raise EvidenceValidationError(f"Corrupted or unreadable WEBP image: {str(e)}")
+        return "image/webp", ".webp"
+
     # 4. DOCX
     elif ext == ".docx":
         if not file_bytes.startswith(b"PK\x03\x04"):
@@ -150,9 +163,12 @@ def extract_evidence_text(file_bytes: bytes, ext: str) -> Optional[str]:
             paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
             return "\n\n".join(paragraphs)[:50000] if paragraphs else None
 
-        elif ext in [".png", ".jpg", ".jpeg"]:
-            with Image.open(io.BytesIO(file_bytes)) as img:
-                return f"Image asset: {img.format} format, {img.width}x{img.height} px, mode {img.mode}"
+        elif ext in [".png", ".jpg", ".jpeg", ".webp"]:
+            from app.services.image_service import inspect_image_bytes
+            res = inspect_image_bytes(file_bytes)
+            if res.ocr_text and res.ocr_text.strip():
+                return res.ocr_text.strip()
+            return f"Image asset: {res.width}x{res.height} px, aspect ratio {res.aspect_ratio}"
     except Exception:
         pass
     return None

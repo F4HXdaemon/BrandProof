@@ -19,6 +19,8 @@ import {
   Scale,
   Hash,
   X,
+  Clock,
+  RotateCcw,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -62,6 +64,79 @@ export default function NewReviewPage() {
   const [applicableKnowledge, setApplicableKnowledge] = useState<ApplicableKnowledgeResponse | null>(null);
   const [loadingKnowledge, setLoadingKnowledge] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submissionStage, setSubmissionStage] = useState<
+    "ready" | "ingesting" | "scoping" | "evaluating" | "completing" | "failed"
+  >("ready");
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+
+  // Draft Autosave
+  const REVIEW_DRAFT_KEY = "brandproof_review_draft_v1";
+  const [hasExistingDraft, setHasExistingDraft] = useState(false);
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(REVIEW_DRAFT_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.title) setHasExistingDraft(true);
+      }
+    } catch (e) {}
+  }, []);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          REVIEW_DRAFT_KEY,
+          JSON.stringify({
+            title,
+            product,
+            region,
+            channel,
+            contentType,
+            intendedAudience,
+            purpose,
+            supportingEvidence,
+            pastedText,
+            inputMode,
+            savedAt: Date.now(),
+          })
+        );
+      } catch (e) {}
+    }, 800);
+    return () => clearTimeout(timeout);
+  }, [title, product, region, channel, contentType, intendedAudience, purpose, supportingEvidence, pastedText, inputMode]);
+
+  const handleRestoreDraft = () => {
+    try {
+      const raw = localStorage.getItem(REVIEW_DRAFT_KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d.title) setTitle(d.title);
+        if (d.product) setProduct(d.product);
+        if (d.region) setRegion(d.region);
+        if (d.channel) setChannel(d.channel);
+        if (d.contentType) setContentType(d.contentType);
+        if (d.intendedAudience) setIntendedAudience(d.intendedAudience);
+        if (d.purpose) setPurpose(d.purpose);
+        if (d.supportingEvidence) setSupportingEvidence(d.supportingEvidence);
+        if (d.pastedText) setPastedText(d.pastedText);
+        if (d.inputMode) setInputMode(d.inputMode);
+        setHasRestoredDraft(true);
+        setHasExistingDraft(false);
+        success("Draft Restored", "Loaded your autosaved review draft.");
+      }
+    } catch (e) {}
+  };
+
+  const handleDiscardDraft = () => {
+    try {
+      localStorage.removeItem(REVIEW_DRAFT_KEY);
+      setHasExistingDraft(false);
+      setHasRestoredDraft(false);
+    } catch (e) {}
+  };
 
   // Drag and drop handlers
   const handleDrag = (e: React.DragEvent) => {
@@ -164,7 +239,11 @@ export default function NewReviewPage() {
 
   // Submit Review
   const handleSubmitReview = async () => {
+    if (submitting) return;
     setSubmitting(true);
+    setSubmissionError(null);
+    setSubmissionStage("ingesting");
+
     try {
       const formData = new FormData();
       formData.append("title", title.trim());
@@ -184,13 +263,27 @@ export default function NewReviewPage() {
         formData.append("pasted_text", pastedText.trim());
       }
 
+      setTimeout(() => {
+        setSubmissionStage((prev) => (prev === "ingesting" ? "scoping" : prev));
+      }, 700);
+
+      setTimeout(() => {
+        setSubmissionStage((prev) => (prev === "scoping" ? "evaluating" : prev));
+      }, 1600);
+
       const reviewDetail = await api.reviews.submitNew(formData);
+      try {
+        localStorage.removeItem(REVIEW_DRAFT_KEY);
+      } catch (e) {}
+      setSubmissionStage("completing");
       success(
-        "Review Initialized",
+        "Evaluation Initialized",
         `Document ingested and brand governance scan initiated for "${title}".`
       );
       router.push(`/reviews/${reviewDetail.id}`);
     } catch (err: any) {
+      setSubmissionStage("failed");
+      setSubmissionError(err.message || "Failed to process document and initiate review.");
       error("Ingestion Failed", err.message || "Failed to process document and initiate review.");
       setSubmitting(false);
     }
@@ -225,6 +318,34 @@ export default function NewReviewPage() {
             </p>
           </div>
         </div>
+
+        {/* Autosave Draft Notification Banner */}
+        {hasExistingDraft && !hasRestoredDraft && (
+          <div className="p-3.5 rounded-lg bg-accent-soft/40 border border-accent/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-ink">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-accent-ink shrink-0" />
+              <span>You have an autosaved review draft.</span>
+            </div>
+            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDiscardDraft}
+                className="text-xs border-line-strong text-ink hover:bg-sunken h-7"
+              >
+                Discard
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleRestoreDraft}
+                className="text-xs bg-accent hover:bg-accent-hover text-ink font-semibold h-7"
+              >
+                <RotateCcw className="w-3 h-3 mr-1" />
+                Resume Draft
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Multi-step progress stepper */}
         <div className="grid grid-cols-3 gap-2">
@@ -769,6 +890,110 @@ export default function NewReviewPage() {
               </div>
             </Card>
 
+            {/* LIVE PROCESSING & SUBMISSION PROGRESS CARD */}
+            {submitting && (
+              <Card className="p-5 border-accent/40 bg-accent-soft/20 animate-in fade-in duration-200 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-accent/20 border border-accent/40 flex items-center justify-center shrink-0">
+                      <ShieldCheck className="w-4 h-4 text-accent-ink animate-pulse" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-ink">
+                        BrandProof Evaluation In Progress
+                      </h4>
+                      <p className="text-xs text-ink-soft">
+                        Analysing submitted marketing claims against scoped approved facts and rules...
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="status" value="Processing" />
+                </div>
+
+                <div className="space-y-2 pt-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px] text-ink-mute">
+                    <span>Pipeline Stage</span>
+                    <span className="font-mono text-accent-ink uppercase">
+                      {submissionStage === "ingesting" && "1/4 • Ingesting & Normalizing Content"}
+                      {submissionStage === "scoping" && "2/4 • Scoping Applicable Knowledge"}
+                      {submissionStage === "evaluating" && "3/4 • CitationGate Claim Verification"}
+                      {submissionStage === "completing" && "4/4 • Generating Audit Findings"}
+                    </span>
+                  </div>
+                  {/* Visual Progress Bar */}
+                  <div className="w-full bg-sunken rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className="bg-accent h-1.5 rounded-full transition-all duration-500 ease-out"
+                      style={{
+                        width:
+                          submissionStage === "ingesting"
+                            ? "25%"
+                            : submissionStage === "scoping"
+                            ? "50%"
+                            : submissionStage === "evaluating"
+                            ? "80%"
+                            : "100%",
+                      }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 text-[11px]">
+                    <div className="flex items-center gap-1.5 text-emerald-400">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Document Ingested</span>
+                    </div>
+                    <div
+                      className={`flex items-center gap-1.5 ${
+                        submissionStage !== "ingesting" ? "text-emerald-400" : "text-ink-mute"
+                      }`}
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Knowledge Scoped</span>
+                    </div>
+                    <div
+                      className={`flex items-center gap-1.5 ${
+                        submissionStage === "evaluating" || submissionStage === "completing"
+                          ? "text-emerald-400"
+                          : "text-ink-mute"
+                      }`}
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>CitationGate Scan</span>
+                    </div>
+                    <div
+                      className={`flex items-center gap-1.5 ${
+                        submissionStage === "completing" ? "text-emerald-400" : "text-ink-mute"
+                      }`}
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Findings & Score</span>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* ERROR ALERT BANNER */}
+            {submissionError && (
+              <div className="p-4 rounded-lg bg-rose-950/30 border border-rose-500/40 text-xs text-rose-300 flex items-start justify-between gap-3 animate-in fade-in">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold text-rose-200 block">Evaluation Launch Failed</span>
+                    <span className="text-rose-300/90">{submissionError}</span>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSubmitReview}
+                  className="shrink-0 text-xs bg-rose-950/60 border-rose-800 hover:bg-rose-900 text-rose-200"
+                >
+                  Retry Audit
+                </Button>
+              </div>
+            )}
+
             <div className="flex items-center justify-between">
               <Button
                 type="button"
@@ -782,10 +1007,11 @@ export default function NewReviewPage() {
                 type="button"
                 onClick={handleSubmitReview}
                 isLoading={submitting}
+                disabled={submitting}
                 className="bg-accent hover:bg-accent-hover text-ink font-semibold"
               >
                 <ShieldCheck className="w-4 h-4 mr-1.5" />
-                Run BrandProof Review
+                {submitting ? "Analysing Content..." : "Run BrandProof Review"}
               </Button>
             </div>
           </div>

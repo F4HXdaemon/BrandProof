@@ -7,7 +7,7 @@ from app.core.security import hash_password
 from app.core.dependencies import get_current_user, require_roles
 from app.models.user import User, UserRole
 from app.models.organization import OrganizationMembership, MembershipStatus
-from app.schemas.auth_and_user import UserCreate, UserUpdate, UserOut
+from app.schemas.auth_and_user import UserCreate, UserUpdate, UserOut, OnboardingUpdatePayload
 from app.services.audit_service import record_audit_event
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -32,6 +32,23 @@ def list_users(
         u_out.organization_id = m.organization_id
         results.append(u_out)
     return results
+
+
+@router.patch("/me/onboarding", response_model=UserOut)
+def update_my_onboarding(
+    payload: OnboardingUpdatePayload,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update onboarding tour completion state for the currently authenticated user."""
+    current_user.onboarding_completed = payload.onboarding_completed
+    db.commit()
+    db.refresh(current_user)
+
+    out = UserOut.model_validate(current_user)
+    out.role = current_user.role
+    out.organization_id = current_user.organization_id
+    return out
 
 
 @router.post("", response_model=UserOut)

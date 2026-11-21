@@ -20,6 +20,10 @@ import {
   Clock,
   Layers,
   Compass,
+  Edit3,
+  Trash2,
+  X,
+  FileCode,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
@@ -54,6 +58,22 @@ export default function EvaluationPage() {
   const [downloadingReportId, setDownloadingReportId] = useState<string | null>(null);
   const hasLoadedBenchmark = useRef(false);
 
+  // Rename Modal State
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
+  const [editingEval, setEditingEval] = useState<Review | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [savingRename, setSavingRename] = useState(false);
+
+  // Delete Modal State
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deletingEval, setDeletingEval] = useState<Review | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Re-run State
+  const [reEvaluatingId, setReEvaluatingId] = useState<string | null>(null);
+
+  const [downloadingJsonId, setDownloadingJsonId] = useState<string | null>(null);
+
   const handleDownloadReport = async (evalId: string, title?: string) => {
     setDownloadingReportId(evalId);
     try {
@@ -64,6 +84,95 @@ export default function EvaluationPage() {
       error("Report Failed", err.message || "Failed to download audit report.");
     } finally {
       setDownloadingReportId(null);
+    }
+  };
+
+  const handleDownloadReportJson = async (evalId: string, title?: string) => {
+    setDownloadingJsonId(evalId);
+    try {
+      const data = await api.evaluation.getReportJson(evalId);
+      const clean = (title || "evaluation").toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+      const filename = `${clean}_audit_report.json`;
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      success("JSON Report Downloaded", "Audit report JSON downloaded successfully.");
+    } catch (err: any) {
+      error("Export Failed", err.message || "Failed to download audit JSON.");
+    } finally {
+      setDownloadingJsonId(null);
+    }
+  };
+
+  const handleOpenRename = (ev: Review) => {
+    setEditingEval(ev);
+    setEditTitle(ev.title || ev.document_title || "");
+    setRenameModalOpen(true);
+  };
+
+  const handleSaveRename = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEval || !editTitle.trim()) return;
+    setSavingRename(true);
+    try {
+      await api.evaluation.update(editingEval.id, { title: editTitle.trim() });
+      setEvaluations((prev) =>
+        prev.map((e) => (e.id === editingEval.id ? { ...e, title: editTitle.trim() } : e))
+      );
+      success("Evaluation Renamed", `Evaluation renamed to "${editTitle.trim()}".`);
+      setRenameModalOpen(false);
+      setEditingEval(null);
+    } catch (err: any) {
+      error("Rename Failed", err.message || "Failed to rename evaluation.");
+    } finally {
+      setSavingRename(false);
+    }
+  };
+
+  const handleReRun = async (evalId: string) => {
+    setReEvaluatingId(evalId);
+    try {
+      const res = await api.evaluation.reEvaluate(evalId);
+      setEvaluations((prev) =>
+        prev.map((e) =>
+          e.id === evalId
+            ? { ...e, status: res.status, risk_score: res.risk_score, risk_level: res.risk_level }
+            : e
+        )
+      );
+      success("Evaluation Re-run Completed", "Brand governance audit re-executed successfully.");
+      loadEvaluations();
+    } catch (err: any) {
+      error("Re-run Failed", err.message || "Failed to re-run evaluation.");
+    } finally {
+      setReEvaluatingId(null);
+    }
+  };
+
+  const handleOpenDelete = (ev: Review) => {
+    setDeletingEval(ev);
+    setDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingEval) return;
+    setIsDeleting(true);
+    try {
+      await api.evaluation.delete(deletingEval.id);
+      setEvaluations((prev) => prev.filter((e) => e.id !== deletingEval.id));
+      success("Evaluation Deleted", `Evaluation "${deletingEval.title || "Untitled"}" deleted successfully.`);
+      setDeleteModalOpen(false);
+      setDeletingEval(null);
+    } catch (err: any) {
+      error("Delete Failed", err.message || "Failed to delete evaluation.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -414,23 +523,71 @@ export default function EvaluationPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                      <div className="flex items-center gap-1.5 self-end md:self-center shrink-0">
+                        {/* Re-run Audit */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleReRun(ev.id)}
+                          isLoading={reEvaluatingId === ev.id}
+                          className="text-xs border-line-strong text-ink hover:bg-sunken h-8 px-2.5"
+                          title="Re-run Brand Evaluation"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 text-accent-ink ${reEvaluatingId === ev.id ? "animate-spin" : ""}`} />
+                        </Button>
+
+                        {/* Rename Evaluation */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenRename(ev)}
+                          className="text-xs border-line-strong text-ink hover:bg-sunken h-8 px-2.5"
+                          title="Rename Evaluation"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-ink-soft hover:text-ink" />
+                        </Button>
+
+                        {/* Download Report */}
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => handleDownloadReport(ev.id, ev.title)}
                           isLoading={downloadingReportId === ev.id}
-                          className="text-xs border-line-strong text-ink hover:bg-sunken"
+                          className="text-xs border-line-strong text-ink hover:bg-sunken h-8 px-2.5"
                           title="Download PDF Report"
                         >
-                          <Download className="w-3 h-3 mr-1 text-accent-ink" />
-                          Report
+                          <Download className="w-3.5 h-3.5 mr-1 text-accent-ink" />
+                          PDF
+                        </Button>
+
+                        {/* Export JSON */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDownloadReportJson(ev.id, ev.title)}
+                          isLoading={downloadingJsonId === ev.id}
+                          className="text-xs border-line-strong text-purple-400 hover:bg-purple-950/20 h-8 px-2.5"
+                          title="Export Audit JSON"
+                        >
+                          <FileCode className="w-3.5 h-3.5 mr-1 text-purple-400" />
+                          JSON
+                        </Button>
+
+                        {/* Delete Evaluation */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleOpenDelete(ev)}
+                          className="text-xs border-line-strong text-rose-400 hover:bg-rose-950/40 hover:border-rose-800 h-8 px-2.5"
+                          title="Delete Evaluation"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </Button>
 
                         <Link href={`/reviews/${ev.id}`}>
-                          <Button size="sm" variant="outline" className="text-xs border-line-strong text-ink hover:bg-sunken">
-                            Open Workspace
-                            <ArrowRight className="w-3 h-3 ml-1.5" />
+                          <Button size="sm" variant="outline" className="text-xs border-line-strong text-ink hover:bg-sunken h-8 px-3">
+                            Workspace
+                            <ArrowRight className="w-3 h-3 ml-1" />
                           </Button>
                         </Link>
                       </div>
@@ -664,6 +821,117 @@ export default function EvaluationPage() {
             ) : (
               <p className="text-xs text-ink-mute">Failed to load benchmark evaluation dataset.</p>
             )}
+          </div>
+        )}
+        {/* Rename Evaluation Modal */}
+        {renameModalOpen && editingEval && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-surface border border-line rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+              <div className="flex items-center justify-between pb-3 border-b border-line">
+                <h3 className="font-semibold text-sm text-ink flex items-center gap-2">
+                  <Edit3 className="w-4 h-4 text-accent-ink" />
+                  Rename Brand Evaluation
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setRenameModalOpen(false)}
+                  className="text-ink-mute hover:text-ink transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveRename} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-ink">
+                    Evaluation Title <span className="text-rose-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="mt-1.5 w-full bg-paper border border-line-strong rounded-lg px-3 py-2 text-xs text-ink placeholder:text-ink-mute focus:outline-none focus:border-accent"
+                    placeholder="Enter new evaluation title..."
+                  />
+                  <p className="text-[11px] text-ink-mute mt-1">
+                    Renaming this evaluation also updates the document title across review consoles.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-line">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRenameModalOpen(false)}
+                    className="text-xs border-line-strong text-ink hover:bg-sunken"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={savingRename || !editTitle.trim()}
+                    className="text-xs bg-accent hover:bg-accent-hover text-ink font-semibold"
+                  >
+                    {savingRename ? "Saving..." : "Save Name"}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Evaluation Confirmation Modal */}
+        {deleteModalOpen && deletingEval && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-surface border border-rose-900/60 rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+              <div className="flex items-center justify-between pb-3 border-b border-line">
+                <h3 className="font-semibold text-sm text-rose-300 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-400" />
+                  Delete Brand Evaluation
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalOpen(false)}
+                  className="text-ink-mute hover:text-ink transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-2 text-xs text-ink-soft">
+                <p>
+                  Are you sure you want to permanently delete{" "}
+                  <strong className="text-ink">{deletingEval.title || "this evaluation"}</strong>?
+                </p>
+                <p className="text-rose-300/80 bg-rose-950/40 p-2.5 rounded-lg border border-rose-900/50">
+                  This will remove the evaluation record, its claims ledger, CitationGate findings, and associated document artifacts from the organization.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-line">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDeleteModalOpen(false)}
+                  className="text-xs border-line-strong text-ink hover:bg-sunken"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isDeleting}
+                  onClick={handleConfirmDelete}
+                  className="text-xs bg-rose-600 hover:bg-rose-500 text-white font-semibold"
+                >
+                  {isDeleting ? "Deleting..." : "Permanently Delete"}
+                </Button>
+              </div>
+            </div>
           </div>
         )}
       </div>

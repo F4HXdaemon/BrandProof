@@ -8,6 +8,7 @@ from app.models.user import UserRole
 class LoginRequest(BaseSchema):
     email: EmailStr
     password: str
+    remember_me: bool = False
 
     @field_validator("password")
     @classmethod
@@ -31,6 +32,17 @@ class RegisterRequest(BaseSchema):
     full_name: str
     role: Optional[UserRole] = None
     invite_token: Optional[str] = None
+    remember_me: bool = False
+
+    @field_validator("organization_name")
+    @classmethod
+    def validate_org_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            s = v.strip()
+            if len(s) < 2:
+                raise ValueError("Organization name must be at least 2 characters long.")
+            return s
+        return v
 
     @field_validator("full_name")
     @classmethod
@@ -191,6 +203,11 @@ class UserBase(BaseSchema):
     title: Optional[str] = None
     avatar_url: Optional[str] = None
     is_active: bool = True
+    onboarding_completed: bool = False
+
+
+class OnboardingUpdatePayload(BaseSchema):
+    onboarding_completed: bool = True
 
 
 class UserCreate(UserBase):
@@ -213,6 +230,7 @@ class UserUpdate(BaseSchema):
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
     avatar_url: Optional[str] = None
+    onboarding_completed: Optional[bool] = None
 
 
 class UserOut(UserBase, TimestampedSchema):

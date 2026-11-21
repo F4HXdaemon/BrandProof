@@ -2,6 +2,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import or_
 from app.database import get_db
 from app.core.dependencies import get_current_user, require_roles, read_upload_file_bounded
@@ -15,7 +16,7 @@ from app.models.review import (
     Comment,
 )
 from app.schemas.document_and_review import (
-    ReviewCreate, ReviewOut, ReviewDetailOut,
+    ReviewCreate, ReviewUpdate, ReviewOut, ReviewDetailOut,
     ClaimOut, FindingOut, ApprovalOut,
     DocumentOut, DocumentVersionOut, DocumentChunkOut,
     CommentCreate, CommentOut, AcceptFixRequest, DismissFindingRequest
@@ -722,4 +723,180 @@ def download_review_report(
             "Cache-Control": "private, no-cache, no-store, must-revalidate",
         }
     )
+
+
+@router.patch("/{review_id}", response_model=ReviewDetailOut)
+def update_review(
+    review_id: str,
+    payload: ReviewUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Updates review metadata (title, summary, purpose, context scopes).
+    Updates linked document title if review title is renamed.
+    """
+    review = db.query(Review).filter(
+        Review.id == review_id,
+        Review.organization_id == current_user.organization_id
+    ).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    if payload.title is not None and payload.title.strip():
+        review.title = payload.title.strip()
+        if review.document:
+            review.document.title = payload.title.strip()
+    if payload.summary is not None:
+        review.summary = payload.summary.strip()
+    if payload.purpose is not None:
+        review.purpose = payload.purpose.strip()
+    if payload.product is not None:
+        review.product = payload.product.strip()
+    if payload.region is not None:
+        review.region = payload.region.strip()
+    if payload.channel is not None:
+        review.channel = payload.channel.strip()
+    if payload.content_type is not None:
+        review.content_type = payload.content_type.strip()
+    if payload.intended_audience is not None:
+        review.intended_audience = payload.intended_audience.strip()
+
+    intent = dict(review.intent_card or {})
+    if payload.title:
+        intent["title"] = review.title
+    if payload.product:
+        intent["product"] = review.product
+    if payload.region:
+        intent["region"] = review.region
+    if payload.channel:
+        intent["channel"] = review.channel
+    if payload.purpose:
+        intent["purpose"] = review.purpose
+    review.intent_card = intent
+    flag_modified(review, "intent_card")
+
+    db.commit()
+    db.refresh(review)
+
+    record_audit_event(
+        db=db,
+        organization_id=current_user.organization_id,
+        actor_id=current_user.id,
+        action="REVIEW_UPDATED",
+        entity_type="Review",
+        entity_id=review.id,
+        metadata={"title": review.title}
+    )
+
+    return get_review_detail(review.id, current_user, db)
+
+
+@router.delete("/{review_id}", response_model=Dict[str, Any])
+def delete_review(
+    review_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Deletes a review and cascades cleanup of findings, claims, comments, approvals.
+    Cleans up associated document if no other reviews reference it.
+    """
+    review = db.query(Review).filter(
+        Review.id == review_id,
+        Review.organization_id == current_user.organization_id
+    ).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    doc_id = review.document_id
+    rev_id = review.id
+    rev_title = review.title or "Review"
+
+    db.delete(review)
+    db.commit()
+
+    if doc_id:
+        remaining = db.query(Review).filter(Review.document_id == doc_id).count()
+        if remaining == 0:
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if doc:
+                db.delete(doc)
+                db.commit()
+
+    record_audit_event(
+        db=db,
+        organization_id=current_user.organization_id,
+        actor_id=current_user.id,
+        action="REVIEW_DELETED",
+        entity_type="Review",
+        entity_id=rev_id,
+        metadata={"title": rev_title}
+    )
+
+    return {
+        "status": "success",
+        "message": f"Review '{rev_title}' deleted successfully.",
+        "id": rev_id
+    }
+
+
+@router.post("/{review_id}/re-evaluate", response_model=ReviewDetailOut)
+@router.post("/{review_id}/retry", response_model=ReviewDetailOut)
+def re_evaluate_review(
+    review_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Re-executes the brand governance evaluation audit for an existing review.
+    Re-evaluates claims against current applicable facts and guidelines,
+    re-runs CitationGate and risk scoring, and updates persisted findings.
+    """
+    review = db.query(Review).filter(
+        Review.id == review_id,
+        Review.organization_id == current_user.organization_id
+    ).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    version = review.version
+    if not version and review.version_id:
+        version = db.query(DocumentVersion).filter(DocumentVersion.id == review.version_id).first()
+    if not version:
+        raise HTTPException(status_code=400, detail="Review has no document version associated for evaluation.")
+
+    review.processing_status = "Processing"
+    review.error_message = None
+    db.commit()
+
+    orchestrator = ReviewOrchestrator(db)
+    try:
+        orchestrator.run_full_audit(review, version)
+        has_blockers = any(
+            f.severity in ("Blocker", "Critical") and f.status in ("Open", "open")
+            for f in (review.findings or [])
+        )
+        review.processing_status = "Requires attention" if has_blockers else "Completed"
+        db.commit()
+        db.refresh(review)
+
+        record_audit_event(
+            db=db,
+            organization_id=current_user.organization_id,
+            actor_id=current_user.id,
+            action="REVIEW_RE_EVALUATED",
+            entity_type="Review",
+            entity_id=review.id,
+            metadata={"findings_count": len(review.findings), "risk_score": review.risk_score}
+        )
+    except Exception as e:
+        review.processing_status = "Failed"
+        review.error_message = str(e)
+        db.commit()
+        db.refresh(review)
+        raise HTTPException(status_code=500, detail=f"Re-evaluation failed: {str(e)}")
+
+    return get_review_detail(review.id, current_user, db)
+
 

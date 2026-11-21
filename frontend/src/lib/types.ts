@@ -14,6 +14,7 @@ export interface User {
   title?: string;
   avatar_url?: string;
   is_active: boolean;
+  onboarding_completed?: boolean;
   organization_id: string;
   created_at: string;
 }
@@ -272,6 +273,63 @@ export interface ApplicableKnowledgeResponse {
   expired_facts_excluded: Fact[];
 }
 
+export interface KnowledgeExtractionResult {
+  evidence_id: string;
+  filename: string;
+  file_type: string;
+  file_size: number;
+  file_hash?: string;
+  extracted_text: string;
+  word_count: number;
+  char_count: number;
+  suggested_facts: Array<{
+    title: string;
+    canonical_value: string;
+    description?: string;
+    source_reference: string;
+    product_scope: string;
+    region_scope: string;
+    channel_scope: string;
+    expires_at?: string | null;
+    confidence?: number;
+  }>;
+  suggested_guidelines: Array<{
+    title: string;
+    principle: string;
+    category: string;
+    severity: SeverityLevel;
+    description: string;
+    do_examples: string[];
+    dont_examples: string[];
+    source_reference: string;
+    product_scope: string;
+    region_scope: string;
+    channel_scope: string;
+  }>;
+  suggested_terms: Array<{
+    approved_term: string;
+    disallowed_variants: string[];
+    replacement?: string;
+    notes?: string;
+    source_reference: string;
+    product_scope: string;
+    region_scope: string;
+    channel_scope: string;
+  }>;
+  suggested_rules: Array<{
+    name: string;
+    rule_type: RuleType | string;
+    severity: SeverityLevel;
+    description: string;
+    configuration: Record<string, any>;
+    source_reference: string;
+    product_scope: string;
+    region_scope: string;
+    channel_scope: string;
+  }>;
+}
+
+
 export type DocumentStatus =
   | "Draft"
   | "Processing"
@@ -361,6 +419,9 @@ export interface Claim {
   confidence: number;
   status: ClaimStatus;
   matched_fact_id?: string;
+  matched_fact_title?: string;
+  evidence_id?: string;
+  evidence_title?: string;
   reasoning?: string;
   created_at: string;
 }
@@ -547,6 +608,7 @@ export interface Evidence {
   file_size: number;
   file_hash?: string;
   status: EvidenceStatus;
+  effective_status?: string;
   validation_errors?: string;
   description?: string;
   source_reference?: string;

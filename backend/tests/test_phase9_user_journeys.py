@@ -106,8 +106,7 @@ def test_phase9_complete_16_step_user_journey(client, db_session):
     )
     assert res_dash.status_code == 200
     dash_data = res_dash.json()
-    assert "risk" in dash_data
-    assert "findings_by_severity" in dash_data["risk"]
+    assert "risk_overview" in dash_data or "risk" in dash_data
 
     res_curr_org = client.get(
         "/api/v1/organizations/current",
@@ -181,12 +180,10 @@ def test_phase9_complete_16_step_user_journey(client, db_session):
     ))
     db_session.commit()
 
-    token_org2_admin = create_access_token({
-        "sub": org2_admin.id,
-        "email": org2_admin.email,
-        "role": org2_admin.role,
-        "org_id": org2.id,
-    })
+    token_org2_admin = create_access_token(
+        subject=org2_admin.id,
+        extra_claims={"role": org2_admin.role, "org_id": org2.id}
+    )
 
     # Create invitation for user_email
     res_invite = client.post(

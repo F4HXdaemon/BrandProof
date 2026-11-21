@@ -25,6 +25,7 @@ class User(Base, BaseModelMixin):
     title = Column(String(100), nullable=True)
     avatar_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    onboarding_completed = Column(Boolean, default=False, nullable=False)
 
     # Relationships
     organization = relationship("Organization", back_populates="users", foreign_keys=[organization_id])

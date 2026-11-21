@@ -42,6 +42,15 @@ def db_session():
 
 @pytest.fixture
 def client(db_session):
+    from app.core.rate_limit import invite_validate_limiter, invite_join_limiter
+    from app.api.v1.auth import login_limiter, register_limiter
+    invite_validate_limiter.reset_for_test()
+    invite_join_limiter.reset_for_test()
+    with login_limiter.lock:
+        login_limiter.attempts.clear()
+    with register_limiter.lock:
+        register_limiter.attempts.clear()
+
     def override_get_db():
         try:
             yield db_session

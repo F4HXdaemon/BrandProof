@@ -5,13 +5,17 @@ import io
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, Response, HTTPException, status, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import or_
 from app.database import get_db
 from app.core.dependencies import get_current_user, read_upload_file_bounded
 from app.models.user import User
 from app.models.document import Document
 from app.models.review import Review, ReviewStatus, ClaimStatus
-from app.schemas.document_and_review import ReviewOut, ReviewDetailOut, EvaluationCreate
+from app.schemas.document_and_review import (
+    ReviewOut, ReviewDetailOut, EvaluationCreate, EvaluationUpdate
+)
+from app.services.audit_service import record_audit_event
 from app.services.scoping_service import get_applicable_knowledge
 from app.services.rule_engine import DeterministicRuleEngine
 from app.services.citation_gate import CitationGate
@@ -441,4 +445,140 @@ def get_evaluation(
         )
 
     return get_review_detail(review.id, current_user, db)
+
+
+@router.patch("/{evaluation_id}", response_model=ReviewDetailOut)
+def update_evaluation(
+    evaluation_id: str,
+    payload: EvaluationUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Updates evaluation metadata (title, summary, purpose, context scopes).
+    Updates linked document title if evaluation title is renamed.
+    """
+    review = db.query(Review).filter(
+        Review.id == evaluation_id,
+        Review.organization_id == current_user.organization_id
+    ).first()
+    if not review:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evaluation not found or unauthorized access"
+        )
+
+    if payload.title is not None and payload.title.strip():
+        review.title = payload.title.strip()
+        if review.document:
+            review.document.title = payload.title.strip()
+    if payload.summary is not None:
+        review.summary = payload.summary.strip()
+    if payload.purpose is not None:
+        review.purpose = payload.purpose.strip()
+    if payload.product is not None:
+        review.product = payload.product.strip()
+    if payload.region is not None:
+        review.region = payload.region.strip()
+    if payload.channel is not None:
+        review.channel = payload.channel.strip()
+    if payload.content_type is not None:
+        review.content_type = payload.content_type.strip()
+    if payload.intended_audience is not None:
+        review.intended_audience = payload.intended_audience.strip()
+
+    intent = dict(review.intent_card or {})
+    if payload.title:
+        intent["title"] = review.title
+    if payload.product:
+        intent["product"] = review.product
+    if payload.region:
+        intent["region"] = review.region
+    if payload.channel:
+        intent["channel"] = review.channel
+    if payload.purpose:
+        intent["purpose"] = review.purpose
+    review.intent_card = intent
+    flag_modified(review, "intent_card")
+
+    db.commit()
+    db.refresh(review)
+
+    record_audit_event(
+        db=db,
+        organization_id=current_user.organization_id,
+        actor_id=current_user.id,
+        action="EVALUATION_UPDATED",
+        entity_type="Review",
+        entity_id=review.id,
+        metadata={"title": review.title}
+    )
+
+    return get_review_detail(review.id, current_user, db)
+
+
+@router.delete("/{evaluation_id}", response_model=Dict[str, Any])
+def delete_evaluation(
+    evaluation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Deletes an evaluation and cascades cleanup of findings, claims, comments, approvals.
+    Cleans up associated document if no other evaluations reference it.
+    """
+    review = db.query(Review).filter(
+        Review.id == evaluation_id,
+        Review.organization_id == current_user.organization_id
+    ).first()
+    if not review:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evaluation not found or unauthorized access"
+        )
+
+    doc_id = review.document_id
+    eval_id = review.id
+    eval_title = review.title or "Evaluation"
+
+    db.delete(review)
+    db.commit()
+
+    if doc_id:
+        remaining = db.query(Review).filter(Review.document_id == doc_id).count()
+        if remaining == 0:
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if doc:
+                db.delete(doc)
+                db.commit()
+
+    record_audit_event(
+        db=db,
+        organization_id=current_user.organization_id,
+        actor_id=current_user.id,
+        action="EVALUATION_DELETED",
+        entity_type="Review",
+        entity_id=eval_id,
+        metadata={"title": eval_title}
+    )
+
+    return {
+        "status": "success",
+        "message": f"Evaluation '{eval_title}' deleted successfully.",
+        "id": eval_id
+    }
+
+
+@router.post("/{evaluation_id}/re-evaluate", response_model=ReviewDetailOut)
+@router.post("/{evaluation_id}/retry", response_model=ReviewDetailOut)
+def re_evaluate_evaluation(
+    evaluation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Re-executes the brand evaluation scan for an existing evaluation ID.
+    """
+    from app.api.v1.reviews import re_evaluate_review
+    return re_evaluate_review(review_id=evaluation_id, current_user=current_user, db=db)
 

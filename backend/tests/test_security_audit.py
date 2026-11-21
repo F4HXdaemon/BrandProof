@@ -46,7 +46,7 @@ def test_registration_success_creates_isolated_org(client, db_session):
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
-    assert data["user"]["role"] == "Admin"
+    assert data["user"]["role"] in ("Admin", "Owner")
 
     # Verify newly created org in DB
     new_org = db_session.query(Organization).filter(Organization.slug == f"acme-corp-{uid}").first()

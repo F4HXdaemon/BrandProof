@@ -18,12 +18,15 @@ import {
   X,
   KeyRound,
   CheckCircle2,
+  Compass,
+  Sparkles,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ProductTourModal } from "@/components/onboarding/product-tour-modal";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
 import { api } from "@/lib/api";
@@ -78,6 +81,7 @@ export default function SettingsPage() {
   const [invitations, setInvitations] = useState<OrganizationInvitation[]>([]);
   const [membershipRequests, setMembershipRequests] = useState<OrganizationMembership[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showTour, setShowTour] = useState(false);
 
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -352,6 +356,32 @@ export default function SettingsPage() {
                     </span>
                   </div>
                 </div>
+              </div>
+            </Card>
+
+            {/* Product Guidance & First-Time Tour */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <div className="flex items-center gap-2">
+                  <Compass className="w-4 h-4 text-accent-ink" />
+                  <CardTitle>Product Tour & Guidance</CardTitle>
+                </div>
+                <Badge variant="status" value={user?.onboarding_completed ? "Approved" : "In Progress"} />
+              </CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
+                <p className="text-xs text-ink-soft max-w-xl">
+                  Revisit the 5-step interactive walkthrough detailing brand knowledge management,
+                  CitationGate verification, and audit report generation.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowTour(true)}
+                  className="bg-surface border-line-strong hover:bg-sunken text-ink text-xs shrink-0"
+                >
+                  <Sparkles className="w-3.5 h-3.5 mr-1.5 text-accent" />
+                  <span>Replay Product Tour</span>
+                </Button>
               </div>
             </Card>
 
@@ -991,6 +1021,15 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
+
+        <ProductTourModal
+          isOpen={showTour}
+          onClose={() => setShowTour(false)}
+          onComplete={() => {
+            setShowTour(false);
+            success("Product Tour", "Tour walkthrough completed.");
+          }}
+        />
       </div>
     </AppShell>
   );

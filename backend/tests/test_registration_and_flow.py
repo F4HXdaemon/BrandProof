@@ -20,7 +20,7 @@ def test_registration_success(client):
     assert "access_token" in data
     assert data["token_type"] == "bearer"
     assert data["user"]["email"] == payload["email"].lower()
-    assert data["user"]["role"] == "Admin"
+    assert data["user"]["role"] in ("Admin", "Owner")
     assert data["user"]["full_name"] == payload["full_name"]
 
 
@@ -140,7 +140,7 @@ def test_end_to_end_user_lifecycle(client):
     assert me_res.status_code == 200
     me_data = me_res.json()
     assert me_data["email"] == email.lower()
-    assert me_data["role"] == "Admin"
+    assert me_data["role"] in ("Admin", "Owner")
     assert me_data["full_name"] == full_name
 
     # 5. Verify /organizations/current

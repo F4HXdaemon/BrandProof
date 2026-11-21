@@ -24,6 +24,7 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
 @router.get("", response_model=DashboardResponse)
+@router.get("/metrics", response_model=DashboardResponse)
 def get_dashboard_data(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)

@@ -672,3 +672,89 @@ def test_evaluation_pdf_and_json_report_generation(client, db_session, test_org,
     assert report_data["approvals"][0]["is_override"] is True
     assert "NOT constitute legal advice" in report_data["disclaimer"]
     assert len(report_data["report_version_fingerprint"]) > 0
+    assert "brand_health_grade" in report_data
+    assert "compliance_score" in report_data
+
+
+def test_claim_link_and_unlink_evidence(client, db_session, test_org, admin_user, creator_user):
+    """Test linking and unlinking supporting corporate evidence directly to claims."""
+    token = create_token_for(admin_user)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 1. Create review and claim
+    doc = Document(
+        organization_id=test_org.id,
+        creator_id=creator_user.id,
+        filename="marketing_copy.txt",
+        file_type="text/plain",
+        file_path="mock/path/copy.txt",
+        file_size=100,
+        processing_status="Ready",
+        title="Marketing Copy",
+    )
+    db_session.add(doc)
+    db_session.flush()
+
+    rev = Review(
+        organization_id=test_org.id,
+        document_id=doc.id,
+        reviewer_id=admin_user.id,
+        title="Marketing Copy Review",
+        status=ReviewStatus.NEEDS_REVIEW.value,
+        risk_score=5.0,
+        risk_level="Medium",
+    )
+    db_session.add(rev)
+    db_session.flush()
+
+    claim = Claim(
+        review_id=rev.id,
+        document_id=doc.id,
+        claim_text="99.99% Enterprise uptime guaranteed across all global regions.",
+        status=ClaimStatus.UNSUPPORTED.value,
+    )
+    db_session.add(claim)
+    db_session.commit()
+
+    # 2. Upload an evidence document
+    pdf_bytes = make_minimal_pdf()
+    up_res = client.post(
+        "/api/v1/evidence/upload",
+        headers=headers,
+        data={"title": "Official SOC2 Attestation"},
+        files={"file": ("soc2.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert up_res.status_code == 201
+    ev_id = up_res.json()["id"]
+
+    # 3. Link evidence to claim via POST /api/v1/claims/{id}/link-evidence
+    link_res = client.post(
+        f"/api/v1/claims/{claim.id}/link-evidence",
+        headers=headers,
+        json={
+            "evidence_id": ev_id,
+            "status": "SUPPORTED",
+            "reasoning": "Backed by official SOC2 attestation section 4",
+        },
+    )
+    assert link_res.status_code == 200
+    linked_data = link_res.json()
+    assert linked_data["evidence_id"] == ev_id
+    assert linked_data["evidence_title"] == "Official SOC2 Attestation"
+    assert linked_data["status"] == "SUPPORTED"
+    assert "Backed by official SOC2" in linked_data["reasoning"]
+
+    # 4. Verify review is now associated with this evidence
+    db_session.expire_all()
+    review_assoc = db_session.query(ReviewEvidence).filter(
+        ReviewEvidence.review_id == rev.id,
+        ReviewEvidence.evidence_id == ev_id
+    ).first()
+    assert review_assoc is not None
+
+    # 5. Unlink evidence via POST /api/v1/claims/{id}/unlink-evidence
+    unlink_res = client.post(f"/api/v1/claims/{claim.id}/unlink-evidence", headers=headers)
+    assert unlink_res.status_code == 200
+    unlinked_data = unlink_res.json()
+    assert unlinked_data["evidence_id"] is None
+    assert unlinked_data["evidence_title"] is None

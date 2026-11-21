@@ -250,6 +250,37 @@ def switch_organization(
     )
 
 
+@router.post("/{organization_id}/switch", response_model=SwitchOrganizationResponse)
+def switch_organization_by_id(
+    organization_id: str,
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Path-based organization switching for URL compatibility."""
+    membership = db.query(OrganizationMembership).join(
+        Organization, OrganizationMembership.organization_id == Organization.id
+    ).filter(
+        OrganizationMembership.user_id == current_user.id,
+        OrganizationMembership.organization_id == organization_id,
+        OrganizationMembership.status == MembershipStatus.ACTIVE.value,
+        Organization.is_active.is_(True)
+    ).first()
+
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Not an active member of the requested organization.",
+        )
+
+    return switch_organization(
+        payload=SwitchOrganizationRequest(organization_id=organization_id),
+        response=response,
+        current_user=current_user,
+        db=db,
+    )
+
+
 @router.post("/create", response_model=SwitchOrganizationResponse)
 def create_organization(
     payload: OrganizationCreate,
@@ -1291,6 +1322,24 @@ def accept_invitation(
             db.query(Organization).filter(Organization.id == current_user.organization_id).first()
         ),
         role=join_res.role or current_user.role or "Creator",
+    )
+
+
+@router.post("/invitations/{token}/accept", response_model=SwitchOrganizationResponse)
+def accept_invitation_by_path(
+    token: str,
+    response: Response,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Path-based invitation acceptance for backward compatibility."""
+    return accept_invitation(
+        payload=AcceptInvitationRequest(token=token),
+        response=response,
+        request=request,
+        current_user=current_user,
+        db=db,
     )
 
 

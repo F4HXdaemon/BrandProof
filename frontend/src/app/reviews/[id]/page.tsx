@@ -46,6 +46,7 @@ import {
   Plus,
   Upload,
   X,
+  AlertCircle,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -66,6 +67,8 @@ import {
   Evidence,
 } from "@/lib/types";
 import { formatDate, formatRelativeTime, formatBytes, getEvidenceStatusBadge } from "@/lib/utils";
+import { PipelineStepper } from "@/components/reviews/pipeline-stepper";
+import { EvaluationScorecard } from "@/components/reviews/evaluation-scorecard";
 
 export default function ReviewDetailPage() {
   const params = useParams();
@@ -83,9 +86,11 @@ export default function ReviewDetailPage() {
   const [diffLoading, setDiffLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
+  const [reEvaluating, setReEvaluating] = useState(false);
+  const [copiedEvalId, setCopiedEvalId] = useState(false);
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState<"findings" | "ledger" | "diff" | "activity" | "evidence">("findings");
+  const [activeTab, setActiveTab] = useState<"overview" | "findings" | "ledger" | "diff" | "activity" | "evidence">("overview");
 
   // Filter States
   const [findingSeverityFilter, setFindingSeverityFilter] = useState<string>("all");
@@ -170,6 +175,38 @@ export default function ReviewDetailPage() {
   useEffect(() => {
     fetchReview();
   }, [fetchReview]);
+
+  // Automated background polling while evaluation is in progress
+  const processingStatus = review?.processing_status;
+  useEffect(() => {
+    if (!processingStatus) return;
+    const isProcessing =
+      processingStatus === "Processing" ||
+      processingStatus === "Extracting" ||
+      processingStatus === "Submitting";
+
+    if (isProcessing) {
+      const interval = setInterval(() => {
+        fetchReview();
+      }, 2500);
+      return () => clearInterval(interval);
+    }
+  }, [processingStatus, fetchReview]);
+
+  const handleReEvaluate = async () => {
+    if (!reviewId || reEvaluating) return;
+    setReEvaluating(true);
+    try {
+      const updated = await api.reviews.reEvaluate(reviewId);
+      setReview(updated);
+      success("Evaluation Completed", "Review re-evaluated against current applicable knowledge.");
+      await fetchReview();
+    } catch (err: any) {
+      error("Evaluation Failed", err.message || "Failed to re-evaluate review.");
+    } finally {
+      setReEvaluating(false);
+    }
+  };
 
   // Permissions & Blocker Calculations
   const isReviewerOrAdmin =
@@ -402,6 +439,14 @@ export default function ReviewDetailPage() {
   const [availableEvidence, setAvailableEvidence] = useState<Evidence[]>([]);
   const [selectedAttachEvidenceId, setSelectedAttachEvidenceId] = useState("");
   const [linkingEvidence, setLinkingEvidence] = useState(false);
+  const [exportingJson, setExportingJson] = useState(false);
+
+  // Claim Evidence Link Modal State
+  const [claimLinkModalOpen, setClaimLinkModalOpen] = useState(false);
+  const [targetClaim, setTargetClaim] = useState<Claim | null>(null);
+  const [selectedClaimEvidenceId, setSelectedClaimEvidenceId] = useState("");
+  const [claimLinkReasoning, setClaimLinkReasoning] = useState("");
+  const [linkingClaimEvidence, setLinkingClaimEvidence] = useState(false);
 
   const handleDownloadReport = async () => {
     if (!review) return;
@@ -417,6 +462,83 @@ export default function ReviewDetailPage() {
       error("Report Failed", err.message || "Failed to generate evaluation audit report.");
     } finally {
       setDownloadingReport(false);
+    }
+  };
+
+  const handleExportReportJson = async () => {
+    if (!review) return;
+    setExportingJson(true);
+    try {
+      const data = await api.reviews.getReportJson(review.id);
+      const cleanTitle = (review.title || review.document_title || "evaluation")
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, "_");
+      const filename = `${cleanTitle}_audit_report.json`;
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      success("JSON Report Exported", `Saved audit telemetry: ${filename}`);
+    } catch (err: any) {
+      error("Export Failed", err.message || "Failed to export JSON report.");
+    } finally {
+      setExportingJson(false);
+    }
+  };
+
+  const handleOpenClaimLinkModal = async (claim: Claim) => {
+    setTargetClaim(claim);
+    setSelectedClaimEvidenceId(claim.evidence_id || "");
+    setClaimLinkReasoning(claim.reasoning || "");
+    setClaimLinkModalOpen(true);
+    try {
+      const allEv = await api.evidence.list();
+      setAvailableEvidence(allEv);
+    } catch (err) {
+      console.warn("Could not load evidence for claim link", err);
+    }
+  };
+
+  const handleConfirmClaimLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetClaim || !selectedClaimEvidenceId) {
+      error("Selection Required", "Please choose an evidence document to back this claim.");
+      return;
+    }
+    setLinkingClaimEvidence(true);
+    try {
+      await api.claims.linkEvidence(
+        targetClaim.id,
+        selectedClaimEvidenceId,
+        "SUPPORTED",
+        claimLinkReasoning.trim() || undefined
+      );
+      success("Evidence Linked to Claim", "Claim verified and CitationGate status updated to SUPPORTED.");
+      setClaimLinkModalOpen(false);
+      setTargetClaim(null);
+      setSelectedClaimEvidenceId("");
+      setClaimLinkReasoning("");
+      fetchReview();
+    } catch (err: any) {
+      error("Link Failed", err.message || "Failed to link evidence to claim.");
+    } finally {
+      setLinkingClaimEvidence(false);
+    }
+  };
+
+  const handleUnlinkClaimEvidence = async (claimId: string) => {
+    if (!confirm("Are you sure you want to unlink evidence from this claim?")) return;
+    try {
+      await api.claims.unlinkEvidence(claimId);
+      success("Evidence Unlinked", "Claim evidence removed and verification status updated.");
+      fetchReview();
+    } catch (err: any) {
+      error("Failed to Unlink", err.message || "Could not unlink evidence.");
     }
   };
 
@@ -571,15 +693,47 @@ export default function ReviewDetailPage() {
               )}
             </div>
 
-            <p className="text-xs text-ink-soft">
-              Document: <span className="text-ink font-mono">{docData?.filename}</span> •
-              Created by <span className="text-ink">{review?.creator_name || "Enterprise Author"}</span> •
-              Updated {formatRelativeTime(review?.updated_at)}
-            </p>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-ink-soft">
+              <span>Document: <strong className="text-ink font-mono">{docData?.filename || review?.title}</strong></span>
+              <span>•</span>
+              <span>Author: <strong className="text-ink">{review?.creator_name || "Enterprise Author"}</strong></span>
+              <span>•</span>
+              <span>Evaluation ID: <code className="text-accent-ink font-mono bg-sunken px-1.5 py-0.5 rounded text-[11px]">{review?.id}</code></span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (review?.id) {
+                    navigator.clipboard.writeText(review.id);
+                    setCopiedEvalId(true);
+                    setTimeout(() => setCopiedEvalId(false), 2000);
+                  }
+                }}
+                className="hover:text-ink text-ink-mute inline-flex items-center gap-1 text-[11px] transition-colors"
+                title="Copy Evaluation ID"
+              >
+                {copiedEvalId ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                <span>{copiedEvalId ? "Copied" : "Copy ID"}</span>
+              </button>
+              <span>•</span>
+              <span>Updated {formatRelativeTime(review?.updated_at)}</span>
+            </div>
           </div>
 
           {/* Action Buttons for Human Approval Workflow */}
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Re-run Evaluation Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReEvaluate}
+              isLoading={reEvaluating}
+              className="border-line-strong hover:bg-sunken text-xs font-medium text-ink bg-paper shadow-sm"
+              title="Re-run brand governance evaluation against updated knowledge base"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 text-accent-ink ${reEvaluating ? "animate-spin" : ""}`} />
+              Re-run Audit
+            </Button>
+
             {/* Download Publication Audit Report (PDF) */}
             <Button
               variant="outline"
@@ -591,6 +745,19 @@ export default function ReviewDetailPage() {
             >
               <Download className="w-3.5 h-3.5 mr-1.5 text-accent-ink" />
               Download Audit Report
+            </Button>
+
+            {/* Export Structured JSON Report */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportReportJson}
+              isLoading={exportingJson}
+              className="border-line-strong hover:bg-sunken text-xs font-medium text-ink bg-paper shadow-sm"
+              title="Export structured JSON audit telemetry and evidence trail"
+            >
+              <FileCode className="w-3.5 h-3.5 mr-1.5 text-purple-400" />
+              Export JSON
             </Button>
 
             {isReviewerOrAdmin ? (
@@ -659,6 +826,149 @@ export default function ReviewDetailPage() {
             )}
           </div>
         </div>
+
+        {/* GOVERNANCE PIPELINE TELEMETRY STEPPER */}
+        {review && (
+          <PipelineStepper
+            review={review}
+            onRetry={handleReEvaluate}
+            isRetrying={reEvaluating}
+          />
+        )}
+
+        {/* PROCESSING IN PROGRESS BANNER */}
+        {(review?.processing_status === "Processing" ||
+          review?.processing_status === "Extracting" ||
+          review?.processing_status === "Submitting") && (
+          <div className="p-4 rounded-xl bg-accent-soft/30 border border-accent/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-ink animate-in fade-in">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-accent/20 border border-accent/40 flex items-center justify-center shrink-0">
+                <RefreshCw className="w-4 h-4 text-accent-ink animate-spin" />
+              </div>
+              <div>
+                <p className="font-semibold text-ink text-sm flex items-center gap-2">
+                  <span>Brand Governance Scan In Progress</span>
+                  <Badge variant="status" value="Processing" />
+                </p>
+                <p className="text-ink-soft text-xs mt-0.5">
+                  BrandProof is actively analysing the submitted content and verifying claims against approved facts and brand guidelines (CitationGate). You can safely navigate away and return at any time.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchReview()}
+                className="text-xs bg-paper border-line-strong hover:bg-sunken"
+              >
+                <RefreshCw className="w-3 h-3 mr-1.5" />
+                Refresh Status
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* PROCESSING FAILED BANNER */}
+        {review?.processing_status === "Failed" && (
+          <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-600/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-rose-200 animate-in fade-in">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-rose-500/20 border border-rose-500/40 flex items-center justify-center shrink-0">
+                <AlertOctagon className="w-5 h-5 text-rose-400" />
+              </div>
+              <div>
+                <p className="font-semibold text-rose-100 text-sm">
+                  Evaluation Analysis Failed
+                </p>
+                <p className="text-rose-300/90 text-xs mt-0.5">
+                  {review.error_message || "An unexpected error occurred during document extraction or claim verification."}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+              <Button
+                size="sm"
+                onClick={handleReEvaluate}
+                isLoading={reEvaluating}
+                className="bg-rose-600 hover:bg-rose-500 text-white border-transparent text-xs"
+              >
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Retry Evaluation
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* CLAIMS & GOVERNANCE EVALUATION SUMMARY CARDS */}
+        {review && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="p-3 rounded-xl bg-surface border border-line">
+              <div className="flex items-center justify-between text-xs text-ink-soft">
+                <span>Total Claims</span>
+                <Tag className="w-3.5 h-3.5 text-accent-ink" />
+              </div>
+              <div className="text-2xl font-bold text-ink mt-1">
+                {claimCounts.total}
+              </div>
+              <p className="text-[11px] text-ink-mute mt-0.5">Claims detected</p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-surface border border-line">
+              <div className="flex items-center justify-between text-xs text-emerald-400">
+                <span>Supported</span>
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              </div>
+              <div className="text-2xl font-bold text-emerald-400 mt-1">
+                {claimCounts.supported}
+              </div>
+              <p className="text-[11px] text-ink-mute mt-0.5">Verified facts</p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-surface border border-line">
+              <div className="flex items-center justify-between text-xs text-rose-400">
+                <span>Conflicting</span>
+                <AlertOctagon className="w-3.5 h-3.5 text-rose-400" />
+              </div>
+              <div className="text-2xl font-bold text-rose-400 mt-1">
+                {claimCounts.conflicts}
+              </div>
+              <p className="text-[11px] text-ink-mute mt-0.5">Contradicts truth</p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-surface border border-line">
+              <div className="flex items-center justify-between text-xs text-amber-400">
+                <span>Unsupported</span>
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+              </div>
+              <div className="text-2xl font-bold text-amber-400 mt-1">
+                {claimCounts.unsupported}
+              </div>
+              <p className="text-[11px] text-ink-mute mt-0.5">No source found</p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-surface border border-line">
+              <div className="flex items-center justify-between text-xs text-orange-400">
+                <span>Expired Scope</span>
+                <Clock className="w-3.5 h-3.5 text-orange-400" />
+              </div>
+              <div className="text-2xl font-bold text-orange-400 mt-1">
+                {claimCounts.expired}
+              </div>
+              <p className="text-[11px] text-ink-mute mt-0.5">Past expiration</p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-surface border border-line">
+              <div className="flex items-center justify-between text-xs text-cyan-400">
+                <span>Out of Scope</span>
+                <Globe className="w-3.5 h-3.5 text-cyan-400" />
+              </div>
+              <div className="text-2xl font-bold text-cyan-400 mt-1">
+                {claimCounts.out_of_scope}
+              </div>
+              <p className="text-[11px] text-ink-mute mt-0.5">Wrong product/region</p>
+            </div>
+          </div>
+        )}
 
         {/* PROMINENT BLOCKER POLICY ALERT BANNER */}
         {hasOpenBlockers && (
@@ -773,8 +1083,21 @@ export default function ReviewDetailPage() {
           </div>
         )}
 
-        {/* 4 DISTINCT WORKSPACE TABS */}
+        {/* DISTINCT WORKSPACE TABS */}
         <div className="border-b border-line flex items-center gap-1 overflow-x-auto text-sm">
+          {/* Tab 0: Overview & Scorecard */}
+          <button
+            onClick={() => setActiveTab("overview")}
+            className={`flex items-center gap-2 py-3 px-4 font-medium transition-all border-b-2 -mb-px shrink-0 ${
+              activeTab === "overview"
+                ? "border-accent text-ink bg-sunken/60 rounded-t-lg"
+                : "border-transparent text-ink-soft hover:text-ink hover:border-line-strong"
+            }`}
+          >
+            <Layers className="w-4 h-4 text-accent-ink" />
+            <span>Overview & Scorecard</span>
+          </button>
+
           {/* Tab 1: Findings */}
           <button
             onClick={() => setActiveTab("findings")}
@@ -866,6 +1189,17 @@ export default function ReviewDetailPage() {
             </span>
           </button>
         </div>
+
+        {/* TAB 0: OVERVIEW & SCORECARD TAB */}
+        {activeTab === "overview" && review && (
+          <EvaluationScorecard
+            review={review}
+            onSelectTab={setActiveTab}
+            onAcceptFix={handleAcceptFix}
+            onFilterSeverity={setFindingSeverityFilter}
+            acceptingFixId={acceptingFixId}
+          />
+        )}
 
         {/* TAB 1: FINDINGS TAB */}
         {activeTab === "findings" && (
@@ -1237,10 +1571,52 @@ export default function ReviewDetailPage() {
                           <div className="flex items-center gap-2 text-[11px] text-ink-soft pt-1">
                             <span className="text-ink-mute">Matched Fact Citation:</span>
                             <span className="font-mono text-accent-ink bg-accent-soft px-2 py-0.5 rounded border border-accent/30">
-                              Fact ID: {claim.matched_fact_id}
+                              {claim.matched_fact_title ? `${claim.matched_fact_title} (${claim.matched_fact_id.slice(0, 8)})` : `Fact ID: ${claim.matched_fact_id}`}
                             </span>
                           </div>
                         )}
+
+                        {/* Linked Evidence Document or Link Action */}
+                        <div className="pt-2 border-t border-line">
+                          {claim.evidence_id ? (
+                            <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                              <div className="flex items-center gap-2 text-emerald-400">
+                                <FileCheck2 className="w-4 h-4 shrink-0" />
+                                <span className="font-medium text-[11px]">
+                                  Backed by Evidence: <strong>{claim.evidence_title || `Evidence ID: ${claim.evidence_id.slice(0, 8)}`}</strong>
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleUnlinkClaimEvidence(claim.id)}
+                                  className="h-6 text-[11px] px-2 text-ink-mute hover:text-rose-400 hover:bg-rose-500/10"
+                                  title="Unlink evidence document"
+                                >
+                                  <Unlink className="w-3 h-3 mr-1" />
+                                  Unlink Evidence
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-lg bg-surface border border-line text-xs">
+                              <span className="text-ink-mute text-[11px] flex items-center gap-1.5">
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                                CitationGate: No supporting corporate evidence document linked to this statement.
+                              </span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenClaimLinkModal(claim)}
+                                className="h-6 text-[11px] px-2.5 text-accent-ink border-accent/30 hover:bg-accent-soft"
+                              >
+                                <Paperclip className="w-3 h-3 mr-1" />
+                                Link Evidence
+                              </Button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -2013,6 +2389,113 @@ export default function ReviewDetailPage() {
                     className="bg-accent hover:bg-accent-hover text-ink text-xs font-semibold"
                   >
                     Attach Document
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL 5: LINK EVIDENCE TO CLAIM MODAL */}
+        {claimLinkModalOpen && targetClaim && (
+          <div className="fixed inset-0 z-50 bg-ink/30 flex items-center justify-center p-4">
+            <div className="bg-surface border border-line rounded-xl max-w-lg w-full p-6 shadow-soft space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-line">
+                <div className="flex items-center gap-2">
+                  <FileCheck2 className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-base font-semibold text-ink">Link Evidence to Claim</h3>
+                </div>
+                <button
+                  onClick={() => {
+                    setClaimLinkModalOpen(false);
+                    setTargetClaim(null);
+                  }}
+                  className="rounded-lg p-1 text-ink-mute hover:text-ink hover:bg-sunken"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleConfirmClaimLink} className="space-y-4 text-xs">
+                {/* Quoted Claim Statement */}
+                <div className="p-3 rounded-lg bg-paper border border-line space-y-1">
+                  <span className="text-[11px] font-semibold text-ink-mute block">Claim Statement:</span>
+                  <p className="text-xs text-ink font-medium">
+                    &ldquo;{targetClaim.claim_text || targetClaim.text}&rdquo;
+                  </p>
+                </div>
+
+                {availableEvidence.length === 0 ? (
+                  <div className="p-4 rounded-lg bg-paper border border-line text-center space-y-2">
+                    <p className="text-ink-mute">No corporate evidence documents available in your organization.</p>
+                    <Link href="/evidence">
+                      <Button size="sm" className="bg-accent hover:bg-accent-hover text-ink text-xs">
+                        <Upload className="w-3.5 h-3.5 mr-1" />
+                        Go to Evidence Manager to Upload
+                      </Button>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block font-semibold text-ink mb-1.5">
+                        Select Supporting Evidence Document *
+                      </label>
+                      <select
+                        value={selectedClaimEvidenceId}
+                        onChange={(e) => setSelectedClaimEvidenceId(e.target.value)}
+                        required
+                        className="w-full px-2.5 py-2 bg-paper border border-line-strong rounded-lg text-xs text-ink focus:outline-none focus:border-accent"
+                      >
+                        <option value="">Choose an evidence document...</option>
+                        {availableEvidence.map((ev) => (
+                          <option key={ev.id} value={ev.id}>
+                            {ev.title} ({ev.filename} • {ev.effective_status || ev.status})
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[11px] text-ink-mute mt-1">
+                        Linking a Validated evidence document satisfies CitationGate and marks this claim statement as SUPPORTED.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-ink mb-1.5">
+                        Citation & Audit Rationale (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={claimLinkReasoning}
+                        onChange={(e) => setClaimLinkReasoning(e.target.value)}
+                        placeholder="e.g. Page 14, Section 3.2 'Third-Party Compliance Attestation'"
+                        className="w-full px-2.5 py-2 bg-paper border border-line-strong rounded-lg text-xs text-ink focus:outline-none focus:border-accent"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-line">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setClaimLinkModalOpen(false);
+                      setTargetClaim(null);
+                    }}
+                    className="border-line-strong hover:bg-sunken text-xs"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    isLoading={linkingClaimEvidence}
+                    disabled={availableEvidence.length === 0 || !selectedClaimEvidenceId}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                    Verify Claim with Evidence
                   </Button>
                 </div>
               </form>

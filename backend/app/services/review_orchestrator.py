@@ -395,7 +395,29 @@ class ReviewOrchestrator:
 
         # 6. Execute Full BrandProof Governance Audit
         if review.processing_status != "Failed":
-            self.run_full_audit(review, version)
+            review.processing_status = "Processing"
+            self.db.commit()
+            try:
+                self.run_full_audit(review, version)
+                # Check for blockers
+                has_blockers = any(
+                    f.severity in ("Blocker", "Critical") and f.status in ("Open", "open")
+                    for f in (review.findings or [])
+                )
+                review.processing_status = "Requires attention" if has_blockers else "Completed"
+            except Exception as e:
+                err_msg = f"Audit execution error: {str(e)}"
+                review.processing_status = "Failed"
+                review.error_message = err_msg
+                record_audit_event(
+                    db=self.db,
+                    organization_id=organization_id,
+                    actor_id=creator_id,
+                    action="AUDIT_FAILED",
+                    entity_type="Review",
+                    entity_id=review.id,
+                    metadata={"error": err_msg},
+                )
 
         self.db.commit()
         self.db.refresh(review)

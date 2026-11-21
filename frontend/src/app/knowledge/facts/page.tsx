@@ -24,6 +24,7 @@ import {
   Tag,
   AlertCircle,
   Download,
+  Sparkles,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -36,6 +37,7 @@ import { useToast } from "@/context/toast-context";
 import { api } from "@/lib/api";
 import { Fact, FactStatus, CsvImportResult } from "@/lib/types";
 import { formatDate, getFactExpiryBadge } from "@/lib/utils";
+import { KnowledgeUploadModal } from "@/components/knowledge/knowledge-upload-modal";
 
 export default function FactsPage() {
   const { user } = useAuth();
@@ -67,6 +69,9 @@ export default function FactsPage() {
   const [expiresAt, setExpiresAt] = useState("");
   const [statusVal, setStatusVal] = useState<FactStatus>("Approved");
   const [saving, setSaving] = useState(false);
+
+  // Document / Image Ingestion Modal (Method B)
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
   // CSV Import Modal
   const [csvModalOpen, setCsvModalOpen] = useState(false);
@@ -238,6 +243,16 @@ export default function FactsPage() {
           <div className="flex items-center gap-2.5">
             {canManageFacts && (
               <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setUploadModalOpen(true)}
+                  className="bg-accent-soft/30 border-accent/40 text-accent-ink hover:bg-accent-soft text-xs"
+                >
+                  <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                  <span>Upload Doc / Image</span>
+                </Button>
+
                 <Button
                   size="sm"
                   variant="outline"
@@ -930,6 +945,14 @@ export default function FactsPage() {
             </div>
           </div>
         )}
+
+        {/* Method B: Document or Image Upload Modal */}
+        <KnowledgeUploadModal
+          isOpen={uploadModalOpen}
+          onClose={() => setUploadModalOpen(false)}
+          targetCategory="fact"
+          onItemCreated={fetchFacts}
+        />
       </div>
     </AppShell>
   );

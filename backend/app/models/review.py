@@ -1,4 +1,5 @@
 import enum
+from typing import Optional, List, Dict, Any
 from sqlalchemy import Column, String, Text, Float, Integer, Boolean, ForeignKey, DateTime, JSON
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -183,6 +184,14 @@ class Claim(Base, BaseModelMixin):
     matched_fact = relationship("Fact", foreign_keys=[matched_fact_id])
     evidence = relationship("Evidence", foreign_keys=[evidence_id], back_populates="claims")
     findings = relationship("Finding", back_populates="claim", cascade="all, delete-orphan")
+
+    @property
+    def evidence_title(self) -> Optional[str]:
+        return self.evidence.title if self.evidence else None
+
+    @property
+    def matched_fact_title(self) -> Optional[str]:
+        return self.matched_fact.title if self.matched_fact else None
 
 
 class Finding(Base, BaseModelMixin):

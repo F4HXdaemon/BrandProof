@@ -35,6 +35,7 @@ import {
   Evidence,
   EvidenceDetail,
   EvidenceStatus,
+  KnowledgeExtractionResult,
 } from "./types";
 
 export class ApiError extends Error {
@@ -110,10 +111,11 @@ function getToken(): string | null {
   return localStorage.getItem("brandproof_token");
 }
 
-export function setToken(token: string) {
+export function setToken(token: string, rememberMe: boolean = false) {
   if (typeof window !== "undefined") {
     localStorage.setItem("brandproof_token", token);
-    document.cookie = `brandproof_token=${token}; path=/; max-age=86400; SameSite=Lax`;
+    const maxAge = rememberMe ? 30 * 24 * 60 * 60 : 24 * 60 * 60;
+    document.cookie = `brandproof_token=${token}; path=/; max-age=${maxAge}; SameSite=Lax`;
   }
 }
 
@@ -255,12 +257,12 @@ async function request<T>(
 export const api = {
   // Authentication
   auth: {
-    login: async (email: string, password: string) =>
+    login: async (email: string, password: string, rememberMe: boolean = false) =>
       request<AuthResponse>(
         "/auth/login",
         {
           method: "POST",
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({ email, password, remember_me: rememberMe }),
         }
       ),
     register: async (payload: RegisterPayload) =>
@@ -278,6 +280,19 @@ export const api = {
     getMe: async () => request<User>("/auth/me"),
     verifyInvite: async (token: string) =>
       request<InviteInfo>(`/organizations/invites/verify?token=${encodeURIComponent(token)}`),
+  },
+
+  // Users
+  users: {
+    list: async () => request<User[]>("/users"),
+    get: async (id: string) => request<User>(`/users/${id}`),
+    update: async (id: string, data: Partial<User>) =>
+      request<User>(`/users/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    updateOnboarding: async (completed: boolean = true) =>
+      request<User>("/users/me/onboarding", {
+        method: "PATCH",
+        body: JSON.stringify({ onboarding_completed: completed }),
+      }),
   },
 
   // Organizations
@@ -585,6 +600,11 @@ export const api = {
       if (params?.channel) query.append("channel", params.channel);
       return request<ApplicableKnowledgeResponse>(`/knowledge/applicable?${query.toString()}`);
     },
+    extract: async (formData: FormData) =>
+      request<KnowledgeExtractionResult>("/knowledge/extract", {
+        method: "POST",
+        body: formData,
+      }),
   },
 
   // Documents
@@ -651,6 +671,15 @@ export const api = {
       request<Review>(`/reviews/${id}/status?status=${status}`, {
         method: "PUT",
       }),
+    update: async (id: string, data: Partial<Review>) =>
+      request<ReviewDetail>(`/reviews/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    delete: async (id: string) =>
+      request<{ status: string; message: string; id: string }>(`/reviews/${id}`, {
+        method: "DELETE",
+      }),
     acceptFix: async (reviewId: string, findingId: string, replacementText?: string) =>
       request<ReviewDetail>(`/reviews/${reviewId}/accept-fix`, {
         method: "POST",
@@ -676,6 +705,12 @@ export const api = {
       }),
     downloadReport: async (reviewId: string, filename?: string) =>
       downloadBlob(`/reviews/${reviewId}/report`, filename || `BrandProof_Report_${reviewId.slice(0, 8)}.pdf`),
+    getReportJson: async (reviewId: string) =>
+      request<any>(`/reviews/${reviewId}/report?format=json`),
+    reEvaluate: async (reviewId: string) =>
+      request<ReviewDetail>(`/reviews/${reviewId}/re-evaluate`, {
+        method: "POST",
+      }),
   },
 
   // Supporting Evidence Management
@@ -726,6 +761,23 @@ export const api = {
   claims: {
     listForReview: async (reviewId: string) =>
       request<Claim[]>(`/claims/review/${reviewId}`),
+    update: async (
+      claimId: string,
+      data: { status?: string; evidence_id?: string; matched_fact_id?: string; reasoning?: string }
+    ) =>
+      request<Claim>(`/claims/${claimId}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    linkEvidence: async (claimId: string, evidenceId: string, status?: string, reasoning?: string) =>
+      request<Claim>(`/claims/${claimId}/link-evidence`, {
+        method: "POST",
+        body: JSON.stringify({ evidence_id: evidenceId, status, reasoning }),
+      }),
+    unlinkEvidence: async (claimId: string) =>
+      request<Claim>(`/claims/${claimId}/unlink-evidence`, {
+        method: "POST",
+      }),
   },
   findings: {
     listForReview: async (reviewId: string) =>
@@ -798,6 +850,19 @@ export const api = {
       return request<Review[]>(`/evaluation?${query.toString()}`);
     },
     get: async (id: string) => request<ReviewDetail>(`/evaluation/${id}`),
+    update: async (id: string, data: Partial<Review>) =>
+      request<ReviewDetail>(`/evaluation/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    delete: async (id: string) =>
+      request<{ status: string; message: string; id: string }>(`/evaluation/${id}`, {
+        method: "DELETE",
+      }),
+    reEvaluate: async (id: string) =>
+      request<ReviewDetail>(`/evaluation/${id}/re-evaluate`, {
+        method: "POST",
+      }),
     submitNew: async (formData: FormData) =>
       request<ReviewDetail>("/evaluation/new", {
         method: "POST",
@@ -822,6 +887,8 @@ export const api = {
     run: async () => request<EvaluationResult>("/evaluation/run"),
     downloadReport: async (id: string, filename?: string) =>
       downloadBlob(`/evaluation/${id}/report`, filename || `BrandProof_Evaluation_${id.slice(0, 8)}.pdf`),
+    getReportJson: async (id: string) =>
+      request<any>(`/evaluation/${id}/report?format=json`),
     downloadCsv: async () =>
       downloadBlob("/evaluation/export", "brandproof_evaluation_results.csv"),
   },

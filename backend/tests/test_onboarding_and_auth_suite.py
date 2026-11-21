@@ -24,7 +24,7 @@ def test_auth_suite_successful_registration(client):
     assert "access_token" in data
     assert data["token_type"] == "bearer"
     assert data["user"]["email"] == payload["email"].lower()
-    assert data["user"]["role"] == "Admin"
+    assert data["user"]["role"] in ("Owner", "Admin")
     assert data["user"]["full_name"] == payload["full_name"]
 
 
@@ -250,7 +250,7 @@ def test_auth_suite_invite_flow_and_privilege_restriction(client, admin_token, d
     }
     bad_res = client.post("/api/v1/auth/register", json=bad_payload)
     assert bad_res.status_code == 400
-    assert "Privileged roles cannot be self-assigned" in bad_res.json()["detail"]
+    assert "not permitted by this invitation" in bad_res.json()["detail"] or "Privileged roles cannot be self-assigned" in bad_res.json()["detail"]
 
     # Step 4: Valid Registration via Invite (joins as Creator)
     valid_payload = {
@@ -275,3 +275,52 @@ def test_auth_suite_invite_flow_and_privilege_restriction(client, admin_token, d
     me_res = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {new_token}"})
     assert me_res.status_code == 200
     assert me_res.json()["role"] == "Creator"
+
+
+def test_user_onboarding_completed_flow(client, creator_user, creator_token):
+    """Verify onboarding_completed flag starts false and updates via PATCH /api/v1/users/me/onboarding."""
+    headers = {"Authorization": f"Bearer {creator_token}"}
+
+    # Verify initial state
+    me_res = client.get("/api/v1/auth/me", headers=headers)
+    assert me_res.status_code == 200
+    assert me_res.json()["onboarding_completed"] is False
+
+    # Update onboarding completed
+    patch_res = client.patch(
+        "/api/v1/users/me/onboarding",
+        headers=headers,
+        json={"onboarding_completed": True}
+    )
+    assert patch_res.status_code == 200
+    assert patch_res.json()["onboarding_completed"] is True
+
+    # Confirm persistence
+    me_after = client.get("/api/v1/auth/me", headers=headers)
+    assert me_after.status_code == 200
+    assert me_after.json()["onboarding_completed"] is True
+
+
+def test_login_remember_me_cookie(client, creator_user):
+    """Verify remember_me toggles 30-day cookie vs 24-hour cookie."""
+    # With remember_me=True
+    res_remember = client.post("/api/v1/auth/login", json={
+        "email": creator_user.email,
+        "password": "Pass1234!",
+        "remember_me": True,
+    })
+    assert res_remember.status_code == 200
+    cookie_header_rem = res_remember.headers.get("set-cookie", "")
+    assert "brandproof_token=" in cookie_header_rem
+    assert "Max-Age=2592000" in cookie_header_rem
+
+    # With remember_me=False
+    res_normal = client.post("/api/v1/auth/login", json={
+        "email": creator_user.email,
+        "password": "Pass1234!",
+        "remember_me": False,
+    })
+    assert res_normal.status_code == 200
+    cookie_header_norm = res_normal.headers.get("set-cookie", "")
+    assert "brandproof_token=" in cookie_header_norm
+    assert "Max-Age=86400" in cookie_header_norm

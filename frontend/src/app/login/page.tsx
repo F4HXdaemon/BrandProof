@@ -29,6 +29,7 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -88,7 +89,7 @@ export default function LoginPage() {
 
     setSubmitting(true);
     try {
-      await login(email.trim().toLowerCase(), password, redirectPath);
+      await login(email.trim().toLowerCase(), password, redirectPath, rememberMe);
     } catch (err: any) {
       let msg = "Invalid email or password.";
       if (err.status === 401) {
@@ -183,6 +184,18 @@ export default function LoginPage() {
             {fieldErrors.password && (
               <p className="mt-1 text-xs text-rose-500">{fieldErrors.password}</p>
             )}
+          </div>
+
+          <div className="flex items-center justify-between pt-1">
+            <label className="flex items-center gap-2 cursor-pointer text-xs text-ink-soft select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="rounded border-line-strong text-accent focus:ring-accent"
+              />
+              <span>Remember me for 30 days</span>
+            </label>
           </div>
 
           <Button

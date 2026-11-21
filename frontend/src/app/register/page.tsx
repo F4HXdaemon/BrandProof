@@ -20,7 +20,9 @@ export default function RegisterPage() {
   const [organizationName, setOrganizationName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [inviteToken, setInviteToken] = useState<string>("");
   const [verifiedInvite, setVerifiedInvite] = useState<InviteInfo | null>(null);
   const [verifyingInvite, setVerifyingInvite] = useState(false);
@@ -28,6 +30,23 @@ export default function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isDemoMode, setIsDemoMode] = useState(false);
+
+  // Compute password strength
+  const getPasswordStrength = (pwd: string) => {
+    if (!pwd) return { score: 0, label: "", color: "" };
+    let score = 0;
+    if (pwd.length >= 8) score += 1;
+    if (pwd.length >= 12) score += 1;
+    if (/[a-z]/.test(pwd) && /[A-Z]/.test(pwd)) score += 1;
+    if (/\d/.test(pwd)) score += 1;
+    if (/[^a-zA-Z0-9]/.test(pwd)) score += 1;
+
+    if (score <= 2) return { score, label: "Weak", color: "bg-rose-500", text: "text-rose-400" };
+    if (score <= 3) return { score, label: "Medium", color: "bg-amber-500", text: "text-amber-400" };
+    return { score, label: "Strong", color: "bg-emerald-500", text: "text-emerald-400" };
+  };
+
+  const passwordStrength = getPasswordStrength(password);
 
   // Generate unique demo credentials for sandbox exploration
   const populateDemoCredentials = () => {
@@ -37,6 +56,7 @@ export default function RegisterPage() {
     setOrganizationName(`Demo Brand ${randomSuffix}`);
     setEmail(`demo-${randomUser}@brandproof-demo.org`);
     setPassword("DemoProof2026!");
+    setConfirmPassword("DemoProof2026!");
     setIsDemoMode(true);
     setInviteToken("");
     setVerifiedInvite(null);
@@ -101,6 +121,12 @@ export default function RegisterPage() {
       errors.password = "Password must be at least 8 characters.";
     } else if (new TextEncoder().encode(password).length > 72) {
       errors.password = "Password must not exceed 72 bytes.";
+    }
+
+    if (!confirmPassword) {
+      errors.confirmPassword = "Please confirm your password.";
+    } else if (confirmPassword !== password) {
+      errors.confirmPassword = "Passwords do not match.";
     }
 
     setFieldErrors(errors);
@@ -371,11 +397,63 @@ export default function RegisterPage() {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              {fieldErrors.password ? (
+              {fieldErrors.password && (
                 <p className="mt-1 text-xs text-rose-500">{fieldErrors.password}</p>
+              )}
+              {password && (
+                <div className="mt-2 space-y-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-ink-mute">Password strength:</span>
+                    <span className={`font-medium ${passwordStrength.text}`}>
+                      {passwordStrength.label}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1 h-1.5">
+                    <div className={`rounded-full ${passwordStrength.score >= 1 ? passwordStrength.color : "bg-line"}`} />
+                    <div className={`rounded-full ${passwordStrength.score >= 2 ? passwordStrength.color : "bg-line"}`} />
+                    <div className={`rounded-full ${passwordStrength.score >= 3 ? passwordStrength.color : "bg-line"}`} />
+                    <div className={`rounded-full ${passwordStrength.score >= 4 ? passwordStrength.color : "bg-line"}`} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <label htmlFor="confirmPassword" className="block text-sm font-medium">
+                  Confirm Password
+                </label>
+              </div>
+              <div className="relative">
+                <input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  required
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    if (fieldErrors.confirmPassword) {
+                      setFieldErrors((prev) => ({ ...prev, confirmPassword: "" }));
+                    }
+                  }}
+                  className={`${inputClass} pr-10`}
+                  placeholder="••••••••"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-mute hover:text-ink transition-colors p-1"
+                  aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                >
+                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {fieldErrors.confirmPassword ? (
+                <p className="mt-1 text-xs text-rose-500">{fieldErrors.confirmPassword}</p>
               ) : (
                 <p className="mt-1 text-[11px] text-ink-mute">
-                  Passwords are never stored in plaintext and are hashed using bcrypt.
+                  Must match the password specified above.
                 </p>
               )}
             </div>

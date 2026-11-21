@@ -200,12 +200,24 @@ class ReportGenerator:
         intent = self.review.intent_card or {}
         supporting_notes = intent.get("supporting_evidence") or "None documented at intake"
 
-        # Risk Color
+        # Risk Color & Health Grade
         risk_color = c_emerald
         if self.review.risk_level in ["High", "Critical"]:
             risk_color = c_rose
         elif self.review.risk_level == "Medium":
             risk_color = c_amber
+
+        base_score = max(0, 100 - (self.review.risk_score or 0))
+        if base_score < 60 or self.review.risk_level == "Critical":
+            grade = "F"
+        elif base_score < 70 or self.review.risk_level == "High":
+            grade = "C"
+        elif base_score < 85 or self.review.risk_level == "Medium":
+            grade = "B"
+        elif base_score < 95:
+            grade = "A"
+        else:
+            grade = "A+"
 
         meta_data = [
             [
@@ -227,8 +239,8 @@ class ReportGenerator:
                 Paragraph(created_str, body_style),
             ],
             [
-                Paragraph("<b>Evaluation Status:</b>", body_style),
-                Paragraph(f"<b>{self.review.status.upper()}</b>", body_bold),
+                Paragraph("<b>Brand Health Grade:</b>", body_style),
+                Paragraph(f"<font color='{risk_color.hexval()}'><b>Grade {grade} ({base_score}% Compliance)</b></font>", body_bold),
                 Paragraph("<b>Governed Risk Score:</b>", body_style),
                 Paragraph(f"<font color='{risk_color.hexval()}'><b>{self.review.risk_score} pts ({self.review.risk_level} Risk)</b></font>", body_bold),
             ],
@@ -291,11 +303,17 @@ class ReportGenerator:
                 elif "EXPIRED" in st_name:
                     st_color = c_amber
 
-                fact_ref = "None (Unbacked claim)"
+                sources = []
+                if c.evidence:
+                    sources.append(f"<b>Doc:</b> {c.evidence.title}")
+                elif c.evidence_id:
+                    sources.append(f"Evidence ID: {c.evidence_id[:8]}")
                 if c.matched_fact:
-                    fact_ref = f"{c.matched_fact.title} ({c.matched_fact.canonical_value})"
+                    sources.append(f"<b>Fact:</b> {c.matched_fact.title}")
                 elif c.matched_fact_id:
-                    fact_ref = f"Fact ID: {c.matched_fact_id[:8]}"
+                    sources.append(f"Fact ID: {c.matched_fact_id[:8]}")
+
+                fact_ref = "<br/>".join(sources) if sources else "None (Unbacked claim)"
 
                 claims_table_data.append([
                     Paragraph(str(idx), table_cell),
@@ -487,6 +505,18 @@ class ReportGenerator:
 
     def get_report_json(self) -> Dict[str, Any]:
         """Returns structured report data for programmatic and audit consumption."""
+        base_score = max(0, 100 - (self.review.risk_score or 0))
+        if base_score < 60 or self.review.risk_level == "Critical":
+            grade = "F"
+        elif base_score < 70 or self.review.risk_level == "High":
+            grade = "C"
+        elif base_score < 85 or self.review.risk_level == "Medium":
+            grade = "B"
+        elif base_score < 95:
+            grade = "A"
+        else:
+            grade = "A+"
+
         claims_data = [
             {
                 "claim_id": c.id,
@@ -495,6 +525,9 @@ class ReportGenerator:
                 "status": c.status,
                 "confidence": c.confidence,
                 "matched_fact_id": c.matched_fact_id,
+                "matched_fact_title": c.matched_fact.title if c.matched_fact else None,
+                "evidence_id": c.evidence_id,
+                "evidence_title": c.evidence.title if c.evidence else None,
                 "reasoning": c.reasoning,
             }
             for c in (self.review.claims or [])
@@ -552,6 +585,8 @@ class ReportGenerator:
             "campaign_title": self.review.title,
             "organization_name": self.org_name,
             "evaluation_status": self.review.status,
+            "brand_health_grade": grade,
+            "compliance_score": base_score,
             "risk_score": self.review.risk_score,
             "risk_level": self.review.risk_level,
             "scopes": {

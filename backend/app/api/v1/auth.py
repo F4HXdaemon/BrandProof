@@ -76,12 +76,13 @@ def _slugify(text: str) -> str:
     return slug or "org"
 
 
-def _set_auth_cookie(response: Response, token: str) -> None:
+def _set_auth_cookie(response: Response, token: str, remember_me: bool = False) -> None:
     """Set secure authentication cookie for browser session handling and Next.js middleware."""
+    max_age = 2592000 if remember_me else 86400
     response.set_cookie(
         key="brandproof_token",
         value=token,
-        max_age=86400,
+        max_age=max_age,
         httponly=False,  # Allows frontend client state to read for hydration sync while protected
         samesite="lax",
         path="/",
@@ -148,7 +149,7 @@ def login(request: LoginRequest, http_req: Request, response: Response, db: Sess
         }
     )
 
-    _set_auth_cookie(response, access_token)
+    _set_auth_cookie(response, access_token, remember_me=request.remember_me)
 
     record_audit_event(
         db=db,
@@ -461,7 +462,7 @@ def register(request: RegisterRequest, http_req: Request, response: Response, db
         }
     )
 
-    _set_auth_cookie(response, access_token)
+    _set_auth_cookie(response, access_token, remember_me=request.remember_me)
 
     record_audit_event(
         db=db,
@@ -506,3 +507,16 @@ def logout(response: Response, current_user: User = Depends(get_current_user), d
 def get_current_authenticated_user(current_user: User = Depends(get_current_user)):
     """Retrieve profile of currently authenticated user in active organization context."""
     return UserOut.model_validate(current_user)
+
+
+@router.get("/invite/{token}")
+def verify_invite_token_auth_alias(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Public invitation verification alias under /auth/invite/{token}."""
+    from app.api.v1.organizations import _validate_invitation_common, get_client_identifier
+    client_ip = get_client_identifier(request)
+    return _validate_invitation_common(db, token, client_ip)
+

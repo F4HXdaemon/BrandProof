@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { BookMarked, Plus, Filter, Trash2, Archive, Shield, Layers, Globe, Tag, CheckCircle2 } from "lucide-react";
+import { BookMarked, Plus, Filter, Trash2, Archive, Shield, Layers, Globe, Tag, CheckCircle2, Sparkles } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
 import { api } from "@/lib/api";
 import { Guideline, SeverityLevel } from "@/lib/types";
+import { KnowledgeUploadModal } from "@/components/knowledge/knowledge-upload-modal";
 
 const CATEGORIES = [
   "All",
@@ -37,6 +38,7 @@ export default function GuidelinesPage() {
   const [search, setSearch] = useState("");
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("Claims");
@@ -142,12 +144,23 @@ export default function GuidelinesPage() {
             </p>
           </div>
 
-          <div>
+          <div className="flex items-center gap-2.5">
             {canManage && (
-              <Button size="sm" onClick={() => setCreateModalOpen(true)}>
-                <Plus className="w-4 h-4 mr-1.5" />
-                <span>Add Guideline</span>
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setUploadModalOpen(true)}
+                  className="bg-accent-soft/30 border-accent/40 text-accent-ink hover:bg-accent-soft text-xs"
+                >
+                  <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                  <span>Upload Doc / Image</span>
+                </Button>
+                <Button size="sm" onClick={() => setCreateModalOpen(true)}>
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  <span>Add Guideline</span>
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -395,6 +408,13 @@ export default function GuidelinesPage() {
             </div>
           </div>
         )}
+
+        <KnowledgeUploadModal
+          isOpen={uploadModalOpen}
+          onClose={() => setUploadModalOpen(false)}
+          targetCategory="guideline"
+          onItemCreated={fetchGuidelines}
+        />
       </div>
     </AppShell>
   );

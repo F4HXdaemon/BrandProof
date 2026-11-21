@@ -15,6 +15,7 @@ import {
   X,
   FileText,
   Filter,
+  Sparkles,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
@@ -22,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { KnowledgeUploadModal } from "@/components/knowledge/knowledge-upload-modal";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
 import { api } from "@/lib/api";
@@ -52,6 +54,9 @@ export default function TerminologyPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvResult, setCsvResult] = useState<CsvImportResult | null>(null);
+
+  // Method B Upload Modal
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
   const fetchTerms = useCallback(async () => {
     setLoading(true);
@@ -185,6 +190,16 @@ export default function TerminologyPage() {
           <div className="flex items-center gap-2.5">
             {canManage && (
               <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setUploadModalOpen(true)}
+                  className="bg-accent/10 border-accent/30 text-accent hover:bg-accent/20"
+                >
+                  <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                  <span>Upload Doc / Image</span>
+                </Button>
+
                 <Button
                   size="sm"
                   variant="outline"
@@ -517,6 +532,13 @@ export default function TerminologyPage() {
             </div>
           </div>
         )}
+
+        <KnowledgeUploadModal
+          isOpen={uploadModalOpen}
+          onClose={() => setUploadModalOpen(false)}
+          targetCategory="term"
+          onItemCreated={fetchTerms}
+        />
       </div>
     </AppShell>
   );

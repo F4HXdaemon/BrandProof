@@ -89,12 +89,22 @@ class ClaimBase(BaseSchema):
     confidence: float = 1.0
     status: ClaimStatus = ClaimStatus.UNSUPPORTED
     matched_fact_id: Optional[str] = None
+    matched_fact_title: Optional[str] = None
+    evidence_id: Optional[str] = None
+    evidence_title: Optional[str] = None
     reasoning: Optional[str] = None
 
 
 class ClaimCreate(ClaimBase):
     review_id: str
     document_id: str
+
+
+class ClaimUpdate(BaseSchema):
+    status: Optional[str] = None
+    evidence_id: Optional[str] = None
+    matched_fact_id: Optional[str] = None
+    reasoning: Optional[str] = None
 
 
 class ClaimOut(ClaimBase, TimestampedSchema):
@@ -204,6 +214,21 @@ class ReviewCreate(BaseSchema):
     intended_audience: Optional[str] = "General"
     purpose: Optional[str] = None
     intent_card: Optional[Dict[str, Any]] = None
+
+
+class ReviewUpdate(BaseSchema):
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    purpose: Optional[str] = None
+    product: Optional[str] = None
+    region: Optional[str] = None
+    channel: Optional[str] = None
+    content_type: Optional[str] = None
+    intended_audience: Optional[str] = None
+
+
+class EvaluationUpdate(ReviewUpdate):
+    pass
 
 
 class ReviewOut(ReviewBase, TimestampedSchema):

@@ -112,7 +112,7 @@ def get_current_user(
         if not membership:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: You do not have an active membership in the requested organization.",
+                detail="Access denied: Not an active member of the requested organization.",
             )
     elif token_org_id:
         # Look up membership matching token claim

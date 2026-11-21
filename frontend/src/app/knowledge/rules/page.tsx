@@ -12,6 +12,7 @@ import {
   Filter,
   CheckCircle2,
   Search,
+  Sparkles,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
@@ -19,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { KnowledgeUploadModal } from "@/components/knowledge/knowledge-upload-modal";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
 import { api } from "@/lib/api";
@@ -49,6 +51,7 @@ export default function RulesPage() {
 
   // Create Modal
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [ruleType, setRuleType] = useState<RuleType>("TERM_CHECK");
@@ -167,12 +170,23 @@ export default function RulesPage() {
             </p>
           </div>
 
-          <div>
+          <div className="flex items-center gap-2.5">
             {canManage && (
-              <Button size="sm" onClick={() => setCreateModalOpen(true)}>
-                <Plus className="w-4 h-4 mr-1.5" />
-                <span>Add Rule</span>
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setUploadModalOpen(true)}
+                  className="bg-accent/10 border-accent/30 text-accent hover:bg-accent/20"
+                >
+                  <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                  <span>Upload Doc / Image</span>
+                </Button>
+                <Button size="sm" onClick={() => setCreateModalOpen(true)}>
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  <span>Add Rule</span>
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -456,6 +470,13 @@ export default function RulesPage() {
             </div>
           </div>
         )}
+
+        <KnowledgeUploadModal
+          isOpen={uploadModalOpen}
+          onClose={() => setUploadModalOpen(false)}
+          targetCategory="rule"
+          onItemCreated={fetchRules}
+        />
       </div>
     </AppShell>
   );

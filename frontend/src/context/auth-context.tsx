@@ -13,9 +13,10 @@ interface AuthContextType {
   currentOrganization: UserOrganization | null;
   organizations: UserOrganization[];
   pendingInvitations: OrganizationInvitation[];
-  login: (email: string, password: string, redirectUrl?: string) => Promise<void>;
+  login: (email: string, password: string, redirectUrl?: string, rememberMe?: boolean) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
+  completeOnboarding: () => Promise<void>;
   quickSwitchDemoUser: (role: UserRole) => Promise<void>;
   switchOrganization: (orgId: string) => Promise<void>;
   createOrganization: (data: { name: string; slug?: string; domain?: string }) => Promise<void>;
@@ -99,11 +100,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadCurrentUser();
   }, [refreshOrganizations, refreshInvitations]);
 
-  const login = async (email: string, password: string, redirectUrl?: string) => {
+  const login = async (email: string, password: string, redirectUrl?: string, rememberMe?: boolean) => {
     setIsLoading(true);
     try {
-      const res = await api.auth.login(email, password);
-      setToken(res.access_token);
+      const res = await api.auth.login(email, password, rememberMe);
+      setToken(res.access_token, rememberMe || false);
       setTokenState(res.access_token);
       setUser(res.user);
       setActiveOrgId(res.user.organization_id);
@@ -119,6 +120,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
     }
   };
+
+  const completeOnboarding = useCallback(async () => {
+    try {
+      const updated = await api.users.updateOnboarding(true);
+      setUser(updated);
+    } catch (err) {
+      console.warn("Failed to update onboarding state:", err);
+    }
+  }, []);
 
   const register = async (payload: RegisterPayload) => {
     setIsLoading(true);
@@ -253,6 +263,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         register,
         logout,
+        completeOnboarding,
         quickSwitchDemoUser,
         switchOrganization,
         createOrganization,

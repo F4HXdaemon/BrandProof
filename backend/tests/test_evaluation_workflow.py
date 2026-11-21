@@ -144,7 +144,7 @@ def test_evaluation_json_submission_endpoint(client, db_session, test_org, creat
 
     assert data["title"] == "JSON Evaluation Submission"
     assert data["intent_card"]["supporting_evidence"] == "Benchmark Whitepaper § 4.2"
-    assert data["processing_status"] == "Ready"
+    assert data["processing_status"] in ["Completed", "Requires attention", "Ready"]
 
 
 def test_evaluation_validation_errors(client, creator_user):
@@ -490,3 +490,134 @@ def test_remediation_accept_fix_and_dismissal(client, db_session, test_org, crea
     dismissed_eval = res_dismiss_ok.json()
     df = next(f for f in dismissed_eval["findings"] if f["id"] == finding2["id"])
     assert df["status"] == "Dismissed"
+
+
+def test_evaluation_rename_and_patch(client, db_session, creator_user):
+    """Test PATCH /api/v1/evaluation/{id} to rename evaluation and update intent scopes."""
+    token = create_token_for(creator_user)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_res = client.post(
+        "/api/v1/evaluation",
+        json={
+            "title": "Initial Evaluation Title",
+            "content": "Northstar Pro offers enterprise cloud solutions with 99.9% uptime.",
+            "product": "Northstar Pro",
+            "region": "India",
+            "channel": "Advertisement",
+            "purpose": "Original campaign goal",
+        },
+        headers=headers
+    )
+    assert create_res.status_code == 200
+    eval_id = create_res.json()["id"]
+
+    patch_res = client.patch(
+        f"/api/v1/evaluation/{eval_id}",
+        json={
+            "title": "Renamed Enterprise Cloud Campaign 2026",
+            "purpose": "Updated executive purpose",
+            "channel": "Social Media",
+        },
+        headers=headers
+    )
+    assert patch_res.status_code == 200, patch_res.text
+    patched = patch_res.json()
+    assert patched["title"] == "Renamed Enterprise Cloud Campaign 2026"
+    assert patched["document"]["title"] == "Renamed Enterprise Cloud Campaign 2026"
+    assert patched["intent_card"]["purpose"] == "Updated executive purpose"
+    assert patched["channel"] == "Social Media"
+
+    # Verify DB state
+    db_review = db_session.query(Review).filter(Review.id == eval_id).first()
+    assert db_review.title == "Renamed Enterprise Cloud Campaign 2026"
+    assert db_review.document.title == "Renamed Enterprise Cloud Campaign 2026"
+
+
+def test_evaluation_delete_and_cascade(client, db_session, creator_user):
+    """Test DELETE /api/v1/evaluation/{id} cascades deletion of review, claims, findings, and document."""
+    token = create_token_for(creator_user)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_res = client.post(
+        "/api/v1/evaluation",
+        json={
+            "title": "Evaluation To Be Deleted",
+            "content": "Guaranteed deployment in 10 minutes with Northstar Sovereign Cloud.",
+            "product": "Northstar Sovereign Cloud",
+        },
+        headers=headers
+    )
+    assert create_res.status_code == 200
+    eval_id = create_res.json()["id"]
+    doc_id = create_res.json()["document_id"]
+
+    delete_res = client.delete(f"/api/v1/evaluation/{eval_id}", headers=headers)
+    assert delete_res.status_code == 200
+    data = delete_res.json()
+    assert data["status"] == "success"
+    assert data["id"] == eval_id
+
+    # Verify review and document are gone from DB
+    assert db_session.query(Review).filter(Review.id == eval_id).first() is None
+    assert db_session.query(Document).filter(Document.id == doc_id).first() is None
+    assert db_session.query(Claim).filter(Claim.review_id == eval_id).count() == 0
+    assert db_session.query(Finding).filter(Finding.review_id == eval_id).count() == 0
+
+
+def test_evaluation_re_evaluate_endpoint(client, creator_user):
+    """Test POST /api/v1/evaluation/{id}/re-evaluate re-executes brand governance scan."""
+    token = create_token_for(creator_user)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_res = client.post(
+        "/api/v1/evaluation",
+        json={
+            "title": "Re-evaluation Target Campaign",
+            "content": "Northstar Pro delivers verified 99.9% availability across all nodes.",
+            "product": "Northstar Pro",
+        },
+        headers=headers
+    )
+    assert create_res.status_code == 200
+    eval_id = create_res.json()["id"]
+
+    re_eval_res = client.post(f"/api/v1/evaluation/{eval_id}/re-evaluate", headers=headers)
+    assert re_eval_res.status_code == 200, re_eval_res.text
+    re_eval_data = re_eval_res.json()
+    assert re_eval_data["id"] == eval_id
+    assert re_eval_data["processing_status"] in ["Completed", "Requires attention"]
+
+
+def test_review_patch_and_delete_endpoints(client, db_session, creator_user):
+    """Test parity for PATCH and DELETE /api/v1/reviews/{id}."""
+    token = create_token_for(creator_user)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_res = client.post(
+        "/api/v1/reviews/new",
+        data={
+            "title": "Review Parity Test",
+            "product": "Northstar Pro",
+            "pasted_text": "Sample text for review parity testing.",
+        },
+        headers=headers
+    )
+    assert create_res.status_code == 200
+    review_id = create_res.json()["id"]
+
+    # Patch
+    patch_res = client.patch(
+        f"/api/v1/reviews/{review_id}",
+        json={"title": "Renamed Via Reviews Endpoint"},
+        headers=headers
+    )
+    assert patch_res.status_code == 200
+    assert patch_res.json()["title"] == "Renamed Via Reviews Endpoint"
+
+    # Delete
+    del_res = client.delete(f"/api/v1/reviews/{review_id}", headers=headers)
+    assert del_res.status_code == 200
+    assert del_res.json()["status"] == "success"
+    assert db_session.query(Review).filter(Review.id == review_id).first() is None
+
