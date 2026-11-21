@@ -71,11 +71,11 @@ export default function DashboardPage() {
   ];
 
   const severities = [
-    { label: "Critical", value: risk?.findings_by_severity.critical ?? 0, tone: "text-rose-400" },
-    { label: "High", value: risk?.findings_by_severity.high ?? 0, tone: "text-amber-400" },
-    { label: "Medium", value: risk?.findings_by_severity.medium ?? 0, tone: "" },
-    { label: "Low", value: risk?.findings_by_severity.low ?? 0, tone: "" },
-    { label: "Advisory", value: risk?.findings_by_severity.advisory ?? 0, tone: "" },
+    { label: "Critical", value: risk?.findings_by_severity?.critical ?? 0, tone: "text-rose-400" },
+    { label: "High", value: risk?.findings_by_severity?.high ?? 0, tone: "text-amber-400" },
+    { label: "Medium", value: risk?.findings_by_severity?.medium ?? 0, tone: "" },
+    { label: "Low", value: risk?.findings_by_severity?.low ?? 0, tone: "" },
+    { label: "Advisory", value: risk?.findings_by_severity?.advisory ?? 0, tone: "" },
   ];
 
   return (

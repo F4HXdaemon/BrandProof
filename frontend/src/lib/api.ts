@@ -33,35 +33,7 @@ import {
   EvidenceStatus,
 } from "./types";
 
-export function getApiBase(): string {
-  const envUrl = process.env.NEXT_PUBLIC_API_URL;
-  const isProduction = process.env.NODE_ENV === "production";
-
-  let url = envUrl ? envUrl.trim().replace(/\/+$/, "") : "http://localhost:8000/api/v1";
-
-  if (isProduction && typeof window !== "undefined") {
-    if (!envUrl) {
-      throw new Error("Configuration Error: NEXT_PUBLIC_API_URL is required in production environment.");
-    }
-    if (!url.startsWith("https://")) {
-      throw new Error(`Security Error: Production NEXT_PUBLIC_API_URL must use HTTPS protocol. Received: ${url}`);
-    }
-    if (url.includes("localhost") || url.includes("127.0.0.1")) {
-      throw new Error(`Security Error: Production NEXT_PUBLIC_API_URL cannot target localhost or 127.0.0.1.`);
-    }
-  }
-
-  // Ensure trailing /api/v1 is present
-  if (!url.endsWith("/api/v1")) {
-    url = `${url}/api/v1`;
-  }
-
-  return url;
-}
-
-export const API_BASE = getApiBase();
-
-class ApiError extends Error {
+export class ApiError extends Error {
   status: number;
   data: any;
 
@@ -72,6 +44,62 @@ class ApiError extends Error {
     this.data = data;
   }
 }
+
+/**
+ * Validates and resolves the backend API base URL safely.
+ * In production, strictly requires NEXT_PUBLIC_API_URL to be set, use HTTPS, and not target localhost.
+ * Never throws at module load time; throws an ApiError only when an actual request is initiated.
+ */
+export function getApiBase(): string {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL;
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (isProduction && typeof window !== "undefined") {
+    if (!envUrl || !envUrl.trim()) {
+      throw new ApiError(
+        0,
+        "Configuration Error: NEXT_PUBLIC_API_URL is missing in the production environment. Please configure your Render backend URL in Vercel settings."
+      );
+    }
+    const trimmed = envUrl.trim().replace(/\/+$/, "");
+    if (!trimmed.startsWith("https://")) {
+      throw new ApiError(
+        0,
+        `Security Error: Production NEXT_PUBLIC_API_URL must use HTTPS protocol. Received: ${trimmed}`
+      );
+    }
+    if (trimmed.includes("localhost") || trimmed.includes("127.0.0.1") || trimmed.includes("0.0.0.0")) {
+      throw new ApiError(
+        0,
+        "Security Error: Production NEXT_PUBLIC_API_URL cannot target localhost or loopback addresses in production."
+      );
+    }
+    return trimmed.endsWith("/api/v1") ? trimmed : `${trimmed}/api/v1`;
+  }
+
+  // Development / Server-side rendering default
+  let url = envUrl ? envUrl.trim().replace(/\/+$/, "") : "http://localhost:8000/api/v1";
+  if (!url.endsWith("/api/v1")) {
+    url = `${url}/api/v1`;
+  }
+  return url;
+}
+
+/**
+ * Backward compatibility export. Safely computes the API URL without throwing during module evaluation.
+ */
+export const API_BASE: string = (function () {
+  try {
+    const raw = process.env.NEXT_PUBLIC_API_URL;
+    if (raw && raw.trim()) {
+      const trimmed = raw.trim().replace(/\/+$/, "");
+      return trimmed.endsWith("/api/v1") ? trimmed : `${trimmed}/api/v1`;
+    }
+    return "http://localhost:8000/api/v1";
+  } catch {
+    return "http://localhost:8000/api/v1";
+  }
+})();
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;

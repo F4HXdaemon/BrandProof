@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Eye, EyeOff, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
@@ -22,7 +23,8 @@ const inputClass =
 const isDemoEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO_MODE === "true";
 
 export default function LoginPage() {
-  const { login, quickSwitchDemoUser, isLoading } = useAuth();
+  const router = useRouter();
+  const { login, quickSwitchDemoUser, isLoading, isAuthenticated } = useAuth();
   const { error } = useToast();
 
   const [email, setEmail] = useState("");
@@ -32,6 +34,14 @@ export default function LoginPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
   const [redirectPath, setRedirectPath] = useState<string>("/dashboard");
+
+  useEffect(() => {
+    // If the user has a verified, confirmed active session and wasn't sent here due to expiration,
+    // seamlessly transition to the intended destination or dashboard.
+    if (isAuthenticated && !sessionExpiredNotice) {
+      router.replace(redirectPath || "/dashboard");
+    }
+  }, [isAuthenticated, sessionExpiredNotice, redirectPath, router]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {

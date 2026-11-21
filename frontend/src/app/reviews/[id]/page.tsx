@@ -466,6 +466,57 @@ export default function ReviewDetailPage() {
     setTimeout(() => setCopiedText(false), 2000);
   };
 
+  if (loading) {
+    return (
+      <AppShell>
+        <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-pulse">
+          <div className="flex items-center justify-between">
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-8 w-64" />
+              <Skeleton className="h-4 w-48" />
+            </div>
+            <div className="flex gap-2">
+              <Skeleton className="h-9 w-36" />
+              <Skeleton className="h-9 w-36" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+          <Skeleton className="h-96 w-full" />
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (!review) {
+    return (
+      <AppShell>
+        <div className="max-w-xl mx-auto py-16 text-center space-y-4">
+          <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mx-auto text-rose-400">
+            <AlertOctagon className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-semibold text-ink">Review Not Found</h2>
+          <p className="text-sm text-ink-soft">
+            The requested evaluation could not be loaded or you do not have permission to view it.
+          </p>
+          <div className="pt-2">
+            <Link href="/reviews">
+              <Button variant="outline" size="sm" className="gap-2">
+                <ArrowLeft className="w-4 h-4" />
+                Return to Reviews
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+
   const currentVersionNumber = review?.version?.version_number || 1;
   const currentExtractedText =
     review?.version?.extracted_text ||
