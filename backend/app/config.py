@@ -53,12 +53,24 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL", "DIRECT_DATABASE_URL", mode="before")
     @classmethod
     def assemble_db_connection(cls, v: Optional[str]) -> Optional[str]:
-        """Normalize Render/Neon postgres:// prefix to postgresql:// and preserve SSL."""
+        """Normalize Render/Neon postgres:// prefix, route to available driver, and preserve SSL."""
         if not v or not isinstance(v, str):
             return v
         cleaned = v.strip()
+
+        # Check if psycopg (psycopg 3) is installed; if not, explicitly specify psycopg2
+        has_psycopg3 = False
+        try:
+            import psycopg  # noqa: F401
+            has_psycopg3 = True
+        except ImportError:
+            pass
+
         if cleaned.startswith("postgres://"):
-            cleaned = cleaned.replace("postgres://", "postgresql://", 1)
+            driver_prefix = "postgresql://" if has_psycopg3 else "postgresql+psycopg2://"
+            cleaned = cleaned.replace("postgres://", driver_prefix, 1)
+        elif cleaned.startswith("postgresql://") and not has_psycopg3:
+            cleaned = cleaned.replace("postgresql://", "postgresql+psycopg2://", 1)
 
         # Enforce sslmode=require for cloud PostgreSQL (Neon, Render, Supabase, RDS)
         if cleaned.startswith("postgresql://") or cleaned.startswith("postgresql+"):

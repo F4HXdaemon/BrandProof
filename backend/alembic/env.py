@@ -23,8 +23,18 @@ migration_url = (
     or os.environ.get("DIRECT_DATABASE_URL")
     or settings.DATABASE_URL
 )
+has_psycopg3 = False
+try:
+    import psycopg  # noqa: F401
+    has_psycopg3 = True
+except ImportError:
+    pass
+
 if migration_url.startswith("postgres://"):
-    migration_url = migration_url.replace("postgres://", "postgresql://", 1)
+    driver_prefix = "postgresql://" if has_psycopg3 else "postgresql+psycopg2://"
+    migration_url = migration_url.replace("postgres://", driver_prefix, 1)
+elif migration_url.startswith("postgresql://") and not has_psycopg3:
+    migration_url = migration_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 # Enforce sslmode=require for non-local PostgreSQL connections
 if migration_url.startswith("postgresql://") or migration_url.startswith("postgresql+"):

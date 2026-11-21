@@ -8,8 +8,18 @@ from app.config import settings
 logger = logging.getLogger("brandproof.database")
 
 db_url = settings.DATABASE_URL
+has_psycopg3 = False
+try:
+    import psycopg  # noqa: F401
+    has_psycopg3 = True
+except ImportError:
+    pass
+
 if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+    driver_prefix = "postgresql://" if has_psycopg3 else "postgresql+psycopg2://"
+    db_url = db_url.replace("postgres://", driver_prefix, 1)
+elif db_url.startswith("postgresql://") and not has_psycopg3:
+    db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 engine_kwargs: Dict[str, Any] = {
     "pool_pre_ping": True,  # Critical for Neon serverless sleep/wake and connection verification

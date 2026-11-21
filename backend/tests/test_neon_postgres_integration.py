@@ -29,9 +29,9 @@ def test_neon_pooled_and_direct_url_parsing():
         SECRET_KEY="test-secret-key-for-unit-testing-purposes-only",
     )
 
-    # 1. Normalizes postgres:// to postgresql://
-    assert s.DATABASE_URL.startswith("postgresql://")
-    assert s.DIRECT_DATABASE_URL.startswith("postgresql://")
+    # 1. Normalizes postgres:// to postgresql:// or postgresql+psycopg2://
+    assert s.DATABASE_URL.startswith("postgresql")
+    assert s.DIRECT_DATABASE_URL.startswith("postgresql")
 
     # 2. Automatically appends sslmode=require for cloud Neon URLs
     assert "sslmode=require" in s.DATABASE_URL
