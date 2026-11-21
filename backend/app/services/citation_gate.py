@@ -11,11 +11,12 @@ database is quarantined and discarded.
 from typing import List, Dict, Any, Tuple, Optional
 from sqlalchemy.orm import Session
 from app.models.knowledge import Fact, Rule, Term, Guideline, ApprovedAsset, FactStatus
+from app.models.evidence import Evidence, EvidenceStatus
 from app.services.rule_engine.base import FindingCandidate
 from app.services.scoping_service import matches_scope, UNIVERSAL_PRODUCT_SCOPES, UNIVERSAL_REGION_SCOPES, UNIVERSAL_CHANNEL_SCOPES
 
 
-VALID_SOURCE_TYPES = {"fact", "rule", "term", "guideline", "asset"}
+VALID_SOURCE_TYPES = {"fact", "rule", "term", "guideline", "asset", "evidence"}
 
 
 class CitationGate:
@@ -116,6 +117,23 @@ class CitationGate:
                 return False, f"Approved asset with id '{source_id}' does not exist in organization."
             if not source_obj.active:
                 return False, f"Approved asset '{source_obj.name}' is inactive."
+
+        elif source_type == "evidence":
+            source_obj = self.db.query(Evidence).filter(
+                Evidence.id == source_id,
+                Evidence.organization_id == self.organization_id
+            ).first()
+            if not source_obj:
+                return False, f"Evidence with id '{source_id}' does not exist in organization."
+            eff_status = source_obj.effective_status
+            if eff_status == EvidenceStatus.INVALID.value:
+                return False, f"Evidence '{source_obj.title}' is marked Invalid (validation error: {source_obj.validation_errors or 'content corrupted'})."
+            if eff_status == EvidenceStatus.REJECTED.value:
+                return False, f"Evidence '{source_obj.title}' is Rejected."
+            if eff_status == EvidenceStatus.UNAVAILABLE.value:
+                return False, f"Evidence '{source_obj.title}' is Unavailable in storage."
+            if eff_status == EvidenceStatus.EXPIRED.value:
+                return False, f"Evidence '{source_obj.title}' has expired; cannot cite as current valid support."
 
         # 5. Scoping check: does the source apply to the document's product, region, channel?
         if source_obj:

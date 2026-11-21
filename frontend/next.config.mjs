@@ -5,7 +5,7 @@ const cspHeader = `
   style-src 'self' 'unsafe-inline';
   img-src 'self' blob: data: https:;
   font-src 'self' data:;
-  connect-src 'self' https:;
+  connect-src 'self' https: http://localhost:8000 http://127.0.0.1:8000 ws://localhost:3000 ws://127.0.0.1:3000;
   frame-ancestors 'none';
   object-src 'none';
   base-uri 'self';

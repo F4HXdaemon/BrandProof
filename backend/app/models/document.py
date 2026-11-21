@@ -1,4 +1,5 @@
 import enum
+from typing import Optional
 from sqlalchemy import Column, String, Integer, Text, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -46,6 +47,14 @@ class Document(Base, BaseModelMixin):
     reviews = relationship("Review", back_populates="document", cascade="all, delete-orphan")
     approvals = relationship("Approval", back_populates="document", cascade="all, delete-orphan")
 
+    @property
+    def created_by_id(self) -> Optional[str]:
+        return self.creator_id
+
+    @created_by_id.setter
+    def created_by_id(self, val: Optional[str]):
+        self.creator_id = val
+
 
 class DocumentVersion(Base, BaseModelMixin):
     __tablename__ = "document_versions"
@@ -66,6 +75,14 @@ class DocumentVersion(Base, BaseModelMixin):
     created_by = relationship("User", foreign_keys=[created_by_id])
     reviews = relationship("Review", back_populates="version")
     chunks = relationship("DocumentChunk", back_populates="version", cascade="all, delete-orphan", order_by="DocumentChunk.sequence")
+
+    @property
+    def storage_path(self) -> str:
+        return self.file_path
+
+    @storage_path.setter
+    def storage_path(self, val: str):
+        self.file_path = val
 
 
 class DocumentChunk(Base, BaseModelMixin):

@@ -18,6 +18,7 @@ from app.models.review import (
     Approval, ApprovalDecision,
     Comment,
 )
+from app.models.evidence import Evidence, EvidenceStatus, ReviewEvidence
 from app.models.audit import AuditEvent
 
 __all__ = [
@@ -46,5 +47,8 @@ __all__ = [
     "Approval",
     "ApprovalDecision",
     "Comment",
+    "Evidence",
+    "EvidenceStatus",
+    "ReviewEvidence",
     "AuditEvent",
 ]

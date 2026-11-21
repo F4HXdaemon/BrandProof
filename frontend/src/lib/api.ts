@@ -22,6 +22,11 @@ import {
   EvaluationResult,
   RegisterPayload,
   AuthResponse,
+  InviteInfo,
+  InviteResponse,
+  Evidence,
+  EvidenceDetail,
+  EvidenceStatus,
 } from "./types";
 
 export function getApiBase(): string {
@@ -72,12 +77,14 @@ function getToken(): string | null {
 export function setToken(token: string) {
   if (typeof window !== "undefined") {
     localStorage.setItem("brandproof_token", token);
+    document.cookie = `brandproof_token=${token}; path=/; max-age=86400; SameSite=Lax`;
   }
 }
 
 export function removeToken() {
   if (typeof window !== "undefined") {
     localStorage.removeItem("brandproof_token");
+    document.cookie = "brandproof_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
   }
 }
 
@@ -148,6 +155,17 @@ async function request<T>(
   }
 
   if (!response.ok) {
+    if (response.status === 401 && token) {
+      removeToken();
+      if (typeof window !== "undefined") {
+        const path = window.location.pathname;
+        if (path !== "/login" && path !== "/register") {
+          const redirect = encodeURIComponent(path + window.location.search);
+          window.location.href = `/login?expired=true&redirect=${redirect}`;
+        }
+      }
+    }
+
     let errorDetail = "An unexpected error occurred";
     let errorData = null;
     try {
@@ -193,13 +211,24 @@ export const api = {
           body: JSON.stringify(payload),
         }
       ),
+    logout: async () =>
+      request<{ success: boolean; message: string }>("/auth/logout", {
+        method: "POST",
+      }),
     getMe: async () => request<User>("/auth/me"),
+    verifyInvite: async (token: string) =>
+      request<InviteInfo>(`/organizations/invites/verify?token=${encodeURIComponent(token)}`),
   },
 
   // Organizations
   organizations: {
     getCurrent: async () => request<Organization>("/organizations/current"),
     getMembers: async () => request<User[]>("/organizations/current/members"),
+    createInvite: async (payload: { email?: string; expires_in_days?: number }) =>
+      request<InviteResponse>("/organizations/current/invites", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
   },
 
   // Dashboard
@@ -462,6 +491,52 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ text, finding_id: findingId }),
       }),
+    downloadReport: async (reviewId: string, filename?: string) =>
+      downloadBlob(`/reviews/${reviewId}/report`, filename || `BrandProof_Report_${reviewId.slice(0, 8)}.pdf`),
+  },
+
+  // Supporting Evidence Management
+  evidence: {
+    list: async (params?: {
+      status?: string;
+      product?: string;
+      review_id?: string;
+      q?: string;
+    }) => {
+      const query = new URLSearchParams();
+      if (params?.status) query.append("status", params.status);
+      if (params?.product) query.append("product", params.product);
+      if (params?.review_id) query.append("review_id", params.review_id);
+      if (params?.q) query.append("q", params.q);
+      return request<Evidence[]>(`/evidence?${query.toString()}`);
+    },
+    get: async (id: string) => request<EvidenceDetail>(`/evidence/${id}`),
+    upload: async (formData: FormData) =>
+      request<Evidence>("/evidence/upload", {
+        method: "POST",
+        body: formData,
+      }),
+    associate: async (evidenceId: string, reviewId: string, notes?: string) =>
+      request<{ status: string; message: string; association_id: string }>(
+        `/evidence/${evidenceId}/associate`,
+        {
+          method: "POST",
+          body: JSON.stringify({ review_id: reviewId, relevance_notes: notes }),
+        }
+      ),
+    removeAssociation: async (evidenceId: string, reviewId: string) =>
+      request<{ status: string; message: string }>(
+        `/evidence/${evidenceId}/associate/${reviewId}`,
+        {
+          method: "DELETE",
+        }
+      ),
+    download: async (id: string, filename?: string) =>
+      downloadBlob(`/evidence/${id}/download`, filename || "evidence_document"),
+    delete: async (id: string) =>
+      request<{ status: string; message: string }>(`/evidence/${id}`, {
+        method: "DELETE",
+      }),
   },
 
   // Claims & Findings
@@ -522,9 +597,48 @@ export const api = {
     get: async () => request<InsightsData>("/insights"),
   },
 
-  // Evaluation Benchmarks
+  // Brand Evaluation & Benchmarks
   evaluation: {
+    list: async (params?: {
+      status?: string;
+      product?: string;
+      region?: string;
+      channel?: string;
+      q?: string;
+    }) => {
+      const query = new URLSearchParams();
+      if (params?.status) query.append("status", params.status);
+      if (params?.product) query.append("product", params.product);
+      if (params?.region) query.append("region", params.region);
+      if (params?.channel) query.append("channel", params.channel);
+      if (params?.q) query.append("q", params.q);
+      return request<Review[]>(`/evaluation?${query.toString()}`);
+    },
+    get: async (id: string) => request<ReviewDetail>(`/evaluation/${id}`),
+    submitNew: async (formData: FormData) =>
+      request<ReviewDetail>("/evaluation/new", {
+        method: "POST",
+        body: formData,
+      }),
+    create: async (data: {
+      title: string;
+      content?: string;
+      pasted_text?: string;
+      product?: string;
+      region?: string;
+      channel?: string;
+      content_type?: string;
+      intended_audience?: string;
+      purpose?: string;
+      supporting_evidence?: string;
+    }) =>
+      request<ReviewDetail>("/evaluation", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
     run: async () => request<EvaluationResult>("/evaluation/run"),
+    downloadReport: async (id: string, filename?: string) =>
+      downloadBlob(`/evaluation/${id}/report`, filename || `BrandProof_Evaluation_${id.slice(0, 8)}.pdf`),
     downloadCsv: async () =>
       downloadBlob("/evaluation/export", "brandproof_evaluation_results.csv"),
   },

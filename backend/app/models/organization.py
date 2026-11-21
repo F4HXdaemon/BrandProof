@@ -20,4 +20,5 @@ class Organization(Base, BaseModelMixin):
     rules = relationship("Rule", back_populates="organization", cascade="all, delete-orphan")
     documents = relationship("Document", back_populates="organization", cascade="all, delete-orphan")
     reviews = relationship("Review", back_populates="organization", cascade="all, delete-orphan")
+    evidence = relationship("Evidence", back_populates="organization", cascade="all, delete-orphan")
     audit_events = relationship("AuditEvent", back_populates="organization", cascade="all, delete-orphan")

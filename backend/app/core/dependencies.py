@@ -1,9 +1,9 @@
 from typing import Generator, List, Optional
-from fastapi import Depends, HTTPException, UploadFile, status
+from fastapi import Depends, HTTPException, Request, UploadFile, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.database import SessionLocal, get_db
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, decode_access_token_with_error
 from app.models.user import User, UserRole
 
 security_scheme = HTTPBearer(auto_error=False)
@@ -27,7 +27,7 @@ async def read_upload_file_bounded(file: UploadFile, max_bytes: int = DEFAULT_MA
         if total_bytes > max_bytes:
             max_mb = max_bytes // (1024 * 1024)
             raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 detail=f"Uploaded file exceeds maximum allowed limit of {max_mb} MB.",
             )
         buffer.extend(chunk)
@@ -35,23 +35,30 @@ async def read_upload_file_bounded(file: UploadFile, max_bytes: int = DEFAULT_MA
 
 
 def get_current_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
     db: Session = Depends(get_db)
 ) -> User:
-    if not credentials or not credentials.credentials:
+    raw_token = None
+    if credentials and credentials.credentials:
+        raw_token = credentials.credentials
+    elif request and "brandproof_token" in request.cookies:
+        raw_token = request.cookies.get("brandproof_token")
+
+    if not raw_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication credentials were not provided",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    raw_token = credentials.credentials
-    payload = decode_access_token(raw_token)
+    payload, error_reason = decode_access_token_with_error(raw_token)
     if not payload:
+        error_detail = error_reason or "Invalid or expired authentication token"
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired authentication token",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail=error_detail,
+            headers={"WWW-Authenticate": f'Bearer error="invalid_token", error_description="{error_detail}"'},
         )
 
     user_id = payload.get("sub")

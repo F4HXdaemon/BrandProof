@@ -56,6 +56,7 @@ export default function NewReviewPage() {
   const [contentType, setContentType] = useState("Ad Copy");
   const [intendedAudience, setIntendedAudience] = useState("Enterprise IT leaders");
   const [purpose, setPurpose] = useState("Promote faster employee onboarding");
+  const [supportingEvidence, setSupportingEvidence] = useState("");
 
   // Step 3: Confirmation & Live Scoping
   const [applicableKnowledge, setApplicableKnowledge] = useState<ApplicableKnowledgeResponse | null>(null);
@@ -173,6 +174,9 @@ export default function NewReviewPage() {
       formData.append("content_type", contentType.trim() || "General Marketing");
       formData.append("intended_audience", intendedAudience.trim() || "All Audiences");
       formData.append("purpose", purpose.trim());
+      if (supportingEvidence.trim()) {
+        formData.append("supporting_evidence", supportingEvidence.trim());
+      }
 
       if (inputMode === "upload" && file) {
         formData.append("file", file);
@@ -560,6 +564,22 @@ export default function NewReviewPage() {
                   />
                   <p className="text-[11px] text-ink-mute mt-1">
                     Stored immutably on the review to provide reviewers and auditors the creator&apos;s strategic intent.
+                  </p>
+                </div>
+
+                <div className="pt-2">
+                  <label className="block text-xs font-medium text-ink">
+                    Supporting Evidence & Citations <span className="text-ink-mute font-normal">(Optional)</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={supportingEvidence}
+                    onChange={(e) => setSupportingEvidence(e.target.value)}
+                    placeholder="e.g. Study results link, ISO 27001 certificate ID, customer survey reference"
+                    className="mt-1 w-full bg-paper border border-line-strong rounded-lg p-2.5 text-xs text-ink placeholder:text-ink-mute focus:outline-none focus:border-accent"
+                  />
+                  <p className="text-[11px] text-ink-mute mt-1">
+                    Provides supplementary source references for CitationGate validation and reviewer audits.
                   </p>
                 </div>
               </div>

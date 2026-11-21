@@ -37,6 +37,11 @@ class StorageBackend(ABC):
         """Get local filesystem path if available, or None if remote."""
         pass
 
+    @abstractmethod
+    def exists(self, file_key: str) -> bool:
+        """Check if file exists in storage."""
+        pass
+
 
 class LocalStorageBackend(StorageBackend):
     """Local filesystem storage implementation for development & testing."""
@@ -88,6 +93,10 @@ class LocalStorageBackend(StorageBackend):
         if os.path.isfile(target_path):
             return target_path
         return None
+
+    def exists(self, file_key: str) -> bool:
+        target_path = self._resolve_path(file_key)
+        return os.path.isfile(target_path)
 
 
 class S3CompatibleStorageBackend(StorageBackend):
@@ -196,6 +205,15 @@ class S3CompatibleStorageBackend(StorageBackend):
     def get_file_path(self, file_key: str) -> Optional[str]:
         # S3 storage is remote, no local path
         return None
+
+    def exists(self, file_key: str) -> bool:
+        client = self._get_client()
+        from botocore.exceptions import ClientError
+        try:
+            client.head_object(Bucket=self.bucket, Key=file_key)
+            return True
+        except Exception:
+            return False
 
 
 def get_storage() -> StorageBackend:

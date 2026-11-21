@@ -145,3 +145,70 @@ export function getFactExpiryBadge(fact: {
     icon: "check",
   };
 }
+
+export function formatBytes(bytes: number, decimals: number = 1): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+}
+
+export function getEvidenceStatusBadge(status: string, isExpired?: boolean): {
+  label: string;
+  colorClass: string;
+  icon: "check" | "clock" | "alert" | "x" | "shield";
+} {
+  if (isExpired || status === "Expired") {
+    return {
+      label: "Expired",
+      colorClass: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+      icon: "alert",
+    };
+  }
+  switch (status) {
+    case "Validated":
+      return {
+        label: "Validated",
+        colorClass: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+        icon: "check",
+      };
+    case "Processing":
+      return {
+        label: "Processing",
+        colorClass: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+        icon: "clock",
+      };
+    case "Uploaded":
+      return {
+        label: "Uploaded",
+        colorClass: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+        icon: "shield",
+      };
+    case "Invalid":
+      return {
+        label: "Invalid Format",
+        colorClass: "bg-rose-500/15 text-rose-400 border-rose-500/30",
+        icon: "x",
+      };
+    case "Rejected":
+      return {
+        label: "Rejected",
+        colorClass: "bg-rose-500/15 text-rose-400 border-rose-500/30",
+        icon: "x",
+      };
+    case "Unavailable":
+      return {
+        label: "Unavailable",
+        colorClass: "bg-sunken text-ink-soft border-line-strong",
+        icon: "alert",
+      };
+    default:
+      return {
+        label: status,
+        colorClass: "bg-sunken text-ink-soft border-line-strong",
+        icon: "clock",
+      };
+  }
+}

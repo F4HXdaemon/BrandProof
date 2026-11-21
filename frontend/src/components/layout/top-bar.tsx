@@ -105,6 +105,9 @@ export function TopBar() {
           <Link href="/reviews" className={linkClass(isActive("/reviews"))}>
             Reviews
           </Link>
+          <Link href="/evidence" className={linkClass(isActive("/evidence"))}>
+            Evidence
+          </Link>
 
           <div className="relative" ref={knowledgeRef}>
             <button
@@ -197,6 +200,9 @@ export function TopBar() {
                 )}
 
                 <div className="py-1">
+                  <Link href="/onboarding" className="block px-4 py-1.5 text-sm text-ink-soft hover:bg-sunken hover:text-ink">
+                    Onboarding Tour
+                  </Link>
                   <Link href="/settings" className="block px-4 py-1.5 text-sm text-ink-soft hover:bg-sunken hover:text-ink">
                     Settings
                   </Link>
@@ -210,7 +216,10 @@ export function TopBar() {
                     </button>
                   )}
                   <button
-                    onClick={logout}
+                    onClick={() => {
+                      setUserOpen(false);
+                      logout();
+                    }}
                     className="block w-full px-4 py-1.5 text-left text-sm text-ink-soft hover:bg-sunken hover:text-ink"
                   >
                     Sign out
@@ -236,6 +245,7 @@ export function TopBar() {
           {[
             { title: "Overview", href: "/dashboard" },
             { title: "Reviews", href: "/reviews" },
+            { title: "Evidence", href: "/evidence" },
             { title: "New review", href: "/reviews/new" },
             ...knowledge,
             { title: "Insights", href: "/insights" },

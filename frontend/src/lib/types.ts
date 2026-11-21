@@ -18,11 +18,30 @@ export interface User {
 }
 
 export interface RegisterPayload {
-  organization_name: string;
+  organization_name?: string;
   organization_slug?: string;
   email: string;
   password: string;
   full_name: string;
+  invite_token?: string;
+  role?: UserRole;
+}
+
+export interface InviteInfo {
+  organization_id: string;
+  organization_name: string;
+  organization_slug: string;
+  email?: string;
+  valid: boolean;
+}
+
+export interface InviteResponse {
+  invite_token: string;
+  organization_id: string;
+  organization_name: string;
+  organization_slug: string;
+  email?: string;
+  expires_at: string;
 }
 
 export interface AuthResponse {
@@ -412,6 +431,67 @@ export interface ReviewDetail extends Review {
   findings: Finding[];
   approvals: Approval[];
   comments?: Comment[];
+  evidence_documents?: Evidence[];
+}
+
+export type EvidenceStatus =
+  | "Uploaded"
+  | "Processing"
+  | "Validated"
+  | "Invalid"
+  | "Expired"
+  | "Rejected"
+  | "Unavailable";
+
+export interface Evidence {
+  id: string;
+  organization_id: string;
+  uploaded_by_id?: string;
+  uploader_name?: string;
+  uploaded_by_name?: string;
+  title: string;
+  filename: string;
+  file_type: string;
+  mime_type?: string;
+  file_extension: string;
+  file_size: number;
+  file_hash?: string;
+  status: EvidenceStatus;
+  validation_errors?: string;
+  description?: string;
+  source_reference?: string;
+  product_scope: string;
+  region_scope: string;
+  channel_scope: string;
+  valid_from?: string;
+  expires_at?: string;
+  is_expired?: boolean;
+  sha256_checksum?: string;
+  associated_review_ids?: string[];
+  associated_reviews_count: number;
+  associated_claims_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EvidenceDetail extends Evidence {
+  extracted_text?: string;
+  associated_reviews: Array<{
+    review_id: string;
+    title: string;
+    status: string;
+    risk_score: number;
+    relevance_notes?: string;
+    associated_at?: string;
+  }>;
+  supported_claims: Array<{
+    claim_id: string;
+    review_id: string;
+    claim_text: string;
+    claim_type?: string;
+    status: string;
+    confidence: number;
+  }>;
 }
 
 export interface AuditEvent {

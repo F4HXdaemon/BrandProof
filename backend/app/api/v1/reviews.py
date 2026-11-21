@@ -1,5 +1,6 @@
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from app.database import get_db
@@ -123,6 +124,7 @@ async def submit_new_review(
     content_type: str = Form("General Marketing"),
     intended_audience: str = Form("All Audiences"),
     purpose: Optional[str] = Form(None),
+    supporting_evidence: Optional[str] = Form(None),
     pasted_text: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_user),
@@ -146,6 +148,7 @@ async def submit_new_review(
         "content_type": content_type.strip(),
         "intended_audience": intended_audience.strip(),
         "purpose": purpose.strip() if purpose else "",
+        "supporting_evidence": supporting_evidence.strip() if supporting_evidence else "",
     }
 
     orchestrator = ReviewOrchestrator(db)
@@ -375,6 +378,22 @@ def get_review_detail(
                 updated_at=c.updated_at,
             )
             for c in (review.comments or [])
+        ],
+        evidence_documents=[
+            {
+                "id": ea.evidence.id,
+                "title": ea.evidence.title,
+                "filename": ea.evidence.filename,
+                "file_type": ea.evidence.file_type,
+                "file_extension": ea.evidence.file_extension,
+                "file_size": ea.evidence.file_size,
+                "status": ea.evidence.effective_status,
+                "source_reference": ea.evidence.source_reference,
+                "relevance_notes": ea.relevance_notes,
+                "created_at": ea.evidence.created_at,
+            }
+            for ea in (review.evidence_associations or [])
+            if ea.evidence
         ],
     )
     return out
@@ -667,3 +686,40 @@ def add_comment(
     out = CommentOut.model_validate(comment)
     out.author_name = current_user.full_name
     return out
+
+
+@router.get("/{review_id}/report")
+def download_review_report(
+    review_id: str,
+    format: Optional[str] = Query("pdf"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Downloads official BrandProof audit report (PDF / JSON) for an evaluation review.
+    """
+    review = db.query(Review).filter(
+        Review.id == review_id,
+        Review.organization_id == current_user.organization_id
+    ).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    from app.services.report_service import ReportGenerator
+    generator = ReportGenerator(review, db)
+
+    if (format or "pdf").lower() == "json":
+        return generator.get_report_json()
+
+    pdf_bytes = generator.generate_pdf()
+    safe_filename = f"BrandProof_Report_{review.id[:8]}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_filename}"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-cache, no-store, must-revalidate",
+        }
+    )
+

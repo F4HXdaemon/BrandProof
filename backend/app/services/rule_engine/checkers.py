@@ -197,7 +197,7 @@ class ForbiddenPhraseChecker(BaseRuleChecker):
             if r_type != "FORBIDDEN_PHRASE" and config.get("type") != "forbidden_phrase":
                 continue
 
-            phrases = config.get("phrases") or []
+            phrases = config.get("phrases") or config.get("forbidden_phrases") or []
             if isinstance(phrases, str):
                 phrases = [p.strip() for p in phrases.split(",") if p.strip()]
             if not phrases and config.get("phrase"):
@@ -205,13 +205,15 @@ class ForbiddenPhraseChecker(BaseRuleChecker):
             if not phrases and rule.name:
                 phrases = [rule.name]
 
-            replacement = config.get("suggested_replacement") or "Delete or qualify statement"
+            replacement = config.get("suggested_replacement") or config.get("suggested_fix") or "Delete or qualify statement"
 
             for phrase in phrases:
                 if not phrase or not phrase.strip():
                     continue
                 clean_phrase = phrase.strip()
-                pattern = re.compile(rf"\b{re.escape(clean_phrase)}\b", re.IGNORECASE)
+                start_b = r"\b" if (clean_phrase[0].isalnum() or clean_phrase[0] == "_") else ""
+                end_b = r"\b" if (clean_phrase[-1].isalnum() or clean_phrase[-1] == "_") else r"(?!\w)"
+                pattern = re.compile(rf"{start_b}{re.escape(clean_phrase)}{end_b}", re.IGNORECASE)
 
                 for m in pattern.finditer(text):
                     start, end = m.span()

@@ -18,6 +18,7 @@ from app.api.v1 import (
     dashboard,
     insights,
     evaluation,
+    evidence,
     demo,
 )
 
@@ -33,6 +34,7 @@ api_router.include_router(terms.router)
 api_router.include_router(rules.router)
 api_router.include_router(knowledge.router)
 api_router.include_router(documents.router)
+api_router.include_router(evidence.router)
 api_router.include_router(reviews.router)
 api_router.include_router(claims.router)
 api_router.include_router(findings.router)

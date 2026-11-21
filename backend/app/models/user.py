@@ -29,6 +29,7 @@ class User(Base, BaseModelMixin):
     organization = relationship("Organization", back_populates="users")
     owned_facts = relationship("Fact", back_populates="owner", foreign_keys="Fact.owner_id")
     created_documents = relationship("Document", back_populates="creator", foreign_keys="Document.creator_id")
+    uploaded_evidence = relationship("Evidence", back_populates="uploaded_by", foreign_keys="Evidence.uploaded_by_id")
     conducted_reviews = relationship("Review", back_populates="reviewer", foreign_keys="Review.reviewer_id")
     approvals = relationship("Approval", back_populates="approver", foreign_keys="Approval.approver_id")
     audit_events = relationship("AuditEvent", back_populates="actor", foreign_keys="AuditEvent.actor_id")

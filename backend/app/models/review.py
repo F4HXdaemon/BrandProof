@@ -145,6 +145,7 @@ class Review(Base, BaseModelMixin):
     findings = relationship("Finding", back_populates="review", cascade="all, delete-orphan")
     approvals = relationship("Approval", back_populates="review", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="review", cascade="all, delete-orphan")
+    evidence_associations = relationship("ReviewEvidence", back_populates="review", cascade="all, delete-orphan")
 
 
 class Claim(Base, BaseModelMixin):
@@ -154,6 +155,7 @@ class Claim(Base, BaseModelMixin):
     review_id = Column(String(36), ForeignKey("reviews.id", ondelete="CASCADE"), nullable=False, index=True)
     document_id = Column(String(36), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
     document_version_id = Column(String(36), ForeignKey("document_versions.id", ondelete="CASCADE"), nullable=True, index=True)
+    evidence_id = Column(String(36), ForeignKey("evidence.id", ondelete="SET NULL"), nullable=True, index=True)
 
     text = Column(Text, nullable=False)
     claim_text = Column(Text, nullable=True)
@@ -179,6 +181,7 @@ class Claim(Base, BaseModelMixin):
     document = relationship("Document")
     version = relationship("DocumentVersion")
     matched_fact = relationship("Fact", foreign_keys=[matched_fact_id])
+    evidence = relationship("Evidence", foreign_keys=[evidence_id], back_populates="claims")
     findings = relationship("Finding", back_populates="claim", cascade="all, delete-orphan")
 
 

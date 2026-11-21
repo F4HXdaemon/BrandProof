@@ -226,6 +226,7 @@ class ReviewDetailOut(ReviewOut):
     findings: List[FindingOut] = []
     approvals: List[ApprovalOut] = []
     comments: List[CommentOut] = []
+    evidence_documents: List[Any] = []
 
 
 class AcceptFixRequest(BaseSchema):
@@ -237,6 +238,18 @@ class DismissFindingRequest(BaseSchema):
     finding_id: str
     dismissal_reason: str
 
+
+class EvaluationCreate(BaseSchema):
+    title: str
+    content: Optional[str] = None
+    pasted_text: Optional[str] = None
+    product: Optional[str] = "All"
+    region: Optional[str] = "Global"
+    channel: Optional[str] = "All"
+    content_type: Optional[str] = "General Marketing"
+    intended_audience: Optional[str] = "All Audiences"
+    purpose: Optional[str] = None
+    supporting_evidence: Optional[str] = None
 
 
 class AuditEventOut(BaseSchema):

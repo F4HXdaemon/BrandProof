@@ -11,14 +11,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.push("/login");
+      const returnUrl = typeof window !== "undefined" ? window.location.pathname + window.location.search : "";
+      const loginUrl = returnUrl && returnUrl !== "/" && returnUrl !== "/dashboard" && returnUrl !== "/login"
+        ? `/login?redirect=${encodeURIComponent(returnUrl)}`
+        : "/login";
+      router.push(loginUrl);
     }
   }, [isLoading, isAuthenticated, router]);
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-paper flex items-center justify-center">
-        <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-ink-mute font-sans">Checking authorization…</p>
+        </div>
       </div>
     );
   }

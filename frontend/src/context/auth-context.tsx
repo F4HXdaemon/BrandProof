@@ -10,9 +10,9 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, redirectUrl?: string) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   quickSwitchDemoUser: (role: UserRole) => Promise<void>;
 }
 
@@ -52,14 +52,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadCurrentUser();
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, redirectUrl?: string) => {
     setIsLoading(true);
     try {
       const res = await api.auth.login(email, password);
       setToken(res.access_token);
       setTokenState(res.access_token);
       setUser(res.user);
-      router.push("/dashboard");
+      const target = redirectUrl && redirectUrl.startsWith("/") && !redirectUrl.startsWith("//")
+        ? redirectUrl
+        : "/dashboard";
+      router.push(target);
     } finally {
       setIsLoading(false);
     }
@@ -72,17 +75,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(res.access_token);
       setTokenState(res.access_token);
       setUser(res.user);
-      router.push("/dashboard");
+      // Guide newly registered users directly through the first-time onboarding experience
+      router.push("/onboarding");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const logout = () => {
-    removeToken();
-    setTokenState(null);
-    setUser(null);
-    router.push("/login");
+  const logout = async () => {
+    try {
+      await api.auth.logout();
+    } catch {
+      // Ignore network errors on logout
+    } finally {
+      removeToken();
+      setTokenState(null);
+      setUser(null);
+      router.push("/login");
+    }
   };
 
   const quickSwitchDemoUser = async (role: UserRole) => {

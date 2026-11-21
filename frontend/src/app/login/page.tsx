@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { Eye, EyeOff, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
 import { Button } from "@/components/ui/button";
@@ -26,29 +27,68 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
+  const [redirectPath, setRedirectPath] = useState<string>("/dashboard");
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const emailParam = params.get("email");
       if (emailParam) {
         setEmail(emailParam);
       }
+      if (params.get("expired") === "true") {
+        setSessionExpiredNotice(true);
+      }
+      const redirectParam = params.get("redirect");
+      if (
+        redirectParam &&
+        redirectParam.startsWith("/") &&
+        !redirectParam.startsWith("//") &&
+        !redirectParam.startsWith("/login")
+      ) {
+        setRedirectPath(redirectParam);
+      }
     }
   }, []);
 
+  const validate = (): boolean => {
+    const errors: Record<string, string> = {};
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email.trim()) {
+      errors.email = "Email address is required.";
+    } else if (!emailRegex.test(email.trim())) {
+      errors.email = "Please enter a valid email address.";
+    }
+
+    if (!password) {
+      errors.password = "Password is required.";
+    }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validate()) return;
+
     setSubmitting(true);
     try {
-      await login(email, password);
+      await login(email.trim().toLowerCase(), password, redirectPath);
     } catch (err: any) {
-      let msg = err.message || "Invalid credentials";
+      let msg = "Invalid email or password.";
       if (err.status === 401) {
-        msg = "Incorrect email or password. Please check your credentials or create an account.";
+        msg = "Incorrect email or password. Please verify your credentials or create a new account.";
       } else if (err.status === 429) {
-        msg = "Too many failed attempts. Please wait a few minutes before trying again.";
+        msg = "Too many login attempts. Please wait a few minutes before trying again.";
+      } else if (err.status === 403) {
+        msg = "Your account has been deactivated. Please contact your organization administrator.";
+      } else if (err.message && !err.message.includes("status 500")) {
+        msg = err.message;
       }
       error("Sign in failed", msg);
     } finally {
@@ -63,8 +103,18 @@ export default function LoginPage() {
           BrandProof
         </Link>
         <h1 className="page-title mt-8 text-3xl">Sign in</h1>
+        <p className="mt-1 text-sm text-ink-soft">
+          Verify every marketing claim against approved brand evidence.
+        </p>
 
-        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+        {sessionExpiredNotice && (
+          <div className="mt-4 flex items-center gap-2.5 rounded-md border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
+            <AlertCircle className="w-4 h-4 shrink-0 text-amber-700" />
+            <span>Your session has expired. Please sign in again to continue.</span>
+          </div>
+        )}
+
+        <form className="mt-6 space-y-4" onSubmit={handleSubmit} noValidate>
           <div>
             <label htmlFor="email" className="block text-sm font-medium">
               Email
@@ -73,30 +123,65 @@ export default function LoginPage() {
               id="email"
               type="email"
               required
+              autoComplete="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: "" }));
+              }}
               className={inputClass}
               placeholder={isDemoEnabled ? "name@northstarcloud.com" : "you@company.com"}
             />
+            {fieldErrors.email && (
+              <p className="mt-1 text-xs text-rose-500">{fieldErrors.email}</p>
+            )}
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className={inputClass}
-              placeholder="••••••••"
-            />
+            <div className="flex items-center justify-between">
+              <label htmlFor="password" className="block text-sm font-medium">
+                Password
+              </label>
+            </div>
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: "" }));
+                }}
+                className={`${inputClass} pr-10`}
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-mute hover:text-ink transition-colors p-1"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+            {fieldErrors.password && (
+              <p className="mt-1 text-xs text-rose-500">{fieldErrors.password}</p>
+            )}
           </div>
 
-          <Button type="submit" className="w-full" isLoading={submitting || isLoading}>
-            Sign in
+          <Button
+            type="submit"
+            className="w-full mt-2"
+            isLoading={submitting || isLoading}
+            disabled={submitting || isLoading}
+          >
+            {submitting ? "Signing in…" : "Sign in"}
           </Button>
         </form>
 
@@ -144,7 +229,10 @@ export default function LoginPage() {
                   <li key={u.role}>
                     <button
                       type="button"
-                      onClick={() => setEmail(roleEmailMap[u.role] || "")}
+                      onClick={() => {
+                        setEmail(roleEmailMap[u.role] || "");
+                        setPassword("BrandProof123!");
+                      }}
                       className="flex w-full items-center justify-between py-2.5 text-left text-sm transition-colors hover:text-accent-ink"
                     >
                       <span>{u.name}</span>
@@ -154,9 +242,13 @@ export default function LoginPage() {
                 );
               })}
             </ul>
+            <p className="mt-2.5 text-center text-xs text-ink-mute">
+              Click any demo account above to autofill (password: <span className="font-mono text-ink font-semibold">BrandProof123!</span>)
+            </p>
           </div>
         )}
       </div>
     </div>
   );
 }
+

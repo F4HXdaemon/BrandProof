@@ -40,6 +40,12 @@ import {
   Shield,
   Info,
   CornerDownRight,
+  FileCheck2,
+  Paperclip,
+  Unlink,
+  Plus,
+  Upload,
+  X,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -57,8 +63,9 @@ import {
   Claim,
   DiffResult,
   Comment,
+  Evidence,
 } from "@/lib/types";
-import { formatDate, formatRelativeTime } from "@/lib/utils";
+import { formatDate, formatRelativeTime, formatBytes, getEvidenceStatusBadge } from "@/lib/utils";
 
 export default function ReviewDetailPage() {
   const params = useParams();
@@ -78,7 +85,7 @@ export default function ReviewDetailPage() {
   const [copiedText, setCopiedText] = useState(false);
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState<"findings" | "ledger" | "diff" | "activity">("findings");
+  const [activeTab, setActiveTab] = useState<"findings" | "ledger" | "diff" | "activity" | "evidence">("findings");
 
   // Filter States
   const [findingSeverityFilter, setFindingSeverityFilter] = useState<string>("all");
@@ -390,6 +397,69 @@ export default function ReviewDetailPage() {
     }
   };
 
+  const [downloadingReport, setDownloadingReport] = useState(false);
+  const [attachEvidenceModalOpen, setAttachEvidenceModalOpen] = useState(false);
+  const [availableEvidence, setAvailableEvidence] = useState<Evidence[]>([]);
+  const [selectedAttachEvidenceId, setSelectedAttachEvidenceId] = useState("");
+  const [linkingEvidence, setLinkingEvidence] = useState(false);
+
+  const handleDownloadReport = async () => {
+    if (!review) return;
+    setDownloadingReport(true);
+    try {
+      const cleanTitle = (review.title || review.document_title || "evaluation")
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, "_");
+      const filename = `${cleanTitle}_audit_report.pdf`;
+      await api.reviews.downloadReport(review.id, filename);
+      success("Report Downloaded", `Saved publication audit report: ${filename}`);
+    } catch (err: any) {
+      error("Report Failed", err.message || "Failed to generate evaluation audit report.");
+    } finally {
+      setDownloadingReport(false);
+    }
+  };
+
+  const handleOpenAttachModal = async () => {
+    setAttachEvidenceModalOpen(true);
+    try {
+      const allEv = await api.evidence.list();
+      const alreadyLinkedIds = new Set((review?.evidence_documents || []).map((e: any) => e.id));
+      setAvailableEvidence(allEv.filter((e) => !alreadyLinkedIds.has(e.id)));
+    } catch (err) {
+      console.warn("Could not load available evidence", err);
+    }
+  };
+
+  const handleAttachEvidence = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!review || !selectedAttachEvidenceId) return;
+    setLinkingEvidence(true);
+    try {
+      await api.evidence.associate(selectedAttachEvidenceId, review.id);
+      success("Evidence Attached", "Corporate evidence document linked to this evaluation.");
+      setAttachEvidenceModalOpen(false);
+      setSelectedAttachEvidenceId("");
+      fetchReview();
+    } catch (err: any) {
+      error("Link Failed", err.message || "Could not link evidence document.");
+    } finally {
+      setLinkingEvidence(false);
+    }
+  };
+
+  const handleUnlinkEvidence = async (evidenceId: string) => {
+    if (!review) return;
+    if (!confirm("Are you sure you want to unlink this evidence document from this evaluation?")) return;
+    try {
+      await api.evidence.removeAssociation(evidenceId, review.id);
+      success("Evidence Unlinked", "Evidence unlinked from this evaluation.");
+      fetchReview();
+    } catch (err: any) {
+      error("Unlink Failed", err.message || "Could not unlink evidence.");
+    }
+  };
+
   const handleCopyRaw = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedText(true);
@@ -459,6 +529,19 @@ export default function ReviewDetailPage() {
 
           {/* Action Buttons for Human Approval Workflow */}
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Download Publication Audit Report (PDF) */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadReport}
+              isLoading={downloadingReport}
+              className="border-line-strong hover:bg-sunken text-xs font-medium text-ink bg-paper shadow-sm"
+              title="Download formal publication compliance report (PDF)"
+            >
+              <Download className="w-3.5 h-3.5 mr-1.5 text-accent-ink" />
+              Download Audit Report
+            </Button>
+
             {isReviewerOrAdmin ? (
               <>
                 <Button
@@ -713,6 +796,22 @@ export default function ReviewDetailPage() {
             <span>Activity & Comments</span>
             <span className="text-xs px-2 py-0.5 rounded-full bg-sunken text-ink font-mono">
               {comments.length + (review?.approvals?.length || 0)}
+            </span>
+          </button>
+
+          {/* Tab 5: Evidence Documents */}
+          <button
+            onClick={() => setActiveTab("evidence")}
+            className={`flex items-center gap-2 py-3 px-4 font-medium transition-all border-b-2 -mb-px shrink-0 ${
+              activeTab === "evidence"
+                ? "border-accent text-ink bg-sunken/60 rounded-t-lg"
+                : "border-transparent text-ink-soft hover:text-ink hover:border-line-strong"
+            }`}
+          >
+            <Paperclip className="w-4 h-4 text-blue-400" />
+            <span>Evidence</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-sunken text-ink font-mono">
+              {review?.evidence_documents?.length || 0}
             </span>
           </button>
         </div>
@@ -1419,6 +1518,178 @@ export default function ReviewDetailPage() {
           </div>
         )}
 
+        {/* TAB 5: EVIDENCE DOCUMENTS TAB */}
+        {activeTab === "evidence" && (
+          <div className="space-y-4">
+            {/* CitationGate Evidence Policy Card */}
+            <div className="p-4 rounded-lg bg-surface border border-line flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                  <Shield className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div>
+                  <p className="font-semibold text-ink text-sm flex items-center gap-2">
+                    <span>Supporting Corporate Evidence</span>
+                    <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-accent-soft text-accent-ink border border-accent/20">
+                      CitationGate Verified
+                    </span>
+                  </p>
+                  <p className="text-ink-soft text-xs mt-0.5">
+                    CitationGate enforces &quot;No valid source = no finding&quot;. Only Validated, non-expired evidence documents scoped to this review&apos;s product and region are accepted as factual justification.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenAttachModal}
+                  className="border-line-strong hover:bg-sunken text-xs text-ink"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1.5" />
+                  Attach Existing Evidence
+                </Button>
+
+                <Link href="/evidence">
+                  <Button
+                    size="sm"
+                    className="bg-accent hover:bg-accent-hover text-ink text-xs font-medium"
+                  >
+                    <Upload className="w-3.5 h-3.5 mr-1.5" />
+                    Evidence Manager
+                  </Button>
+                </Link>
+              </div>
+            </div>
+
+            {/* Evidence List */}
+            {review?.evidence_documents && review.evidence_documents.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {review.evidence_documents.map((doc: any) => {
+                  const statusBadge = getEvidenceStatusBadge(doc.status, doc.is_expired);
+                  return (
+                    <Card key={doc.id} className="p-4 bg-surface border-line space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2.5">
+                          <div className="p-2 rounded bg-paper border border-line text-accent-ink shrink-0">
+                            <FileText className="w-4 h-4" />
+                          </div>
+                          <div className="space-y-0.5">
+                            <h4 className="text-xs font-semibold text-ink line-clamp-1">{doc.title}</h4>
+                            <p className="text-[11px] font-mono text-ink-mute truncate max-w-[220px]">
+                              {doc.filename}
+                            </p>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${statusBadge.colorClass}`}
+                        >
+                          {statusBadge.icon === "check" && <CheckCircle2 className="w-2.5 h-2.5" />}
+                          {statusBadge.icon === "alert" && <AlertTriangle className="w-2.5 h-2.5" />}
+                          {statusBadge.icon === "x" && <XCircle className="w-2.5 h-2.5" />}
+                          <span>{statusBadge.label}</span>
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-[11px] bg-paper p-2.5 rounded-lg border border-line">
+                        <div>
+                          <span className="text-ink-mute block">File Size</span>
+                          <span className="text-ink font-medium mt-0.5 block">{formatBytes(doc.file_size || 0)}</span>
+                        </div>
+                        <div>
+                          <span className="text-ink-mute block">Product Scope</span>
+                          <span className="text-accent-ink font-medium mt-0.5 block truncate">
+                            {doc.product_scope || "All Products"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-ink-mute block">Uploaded</span>
+                          <span className="text-ink font-medium mt-0.5 block">
+                            {formatRelativeTime(doc.created_at)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-ink-mute block">Validity</span>
+                          <span
+                            className={`font-medium mt-0.5 block ${
+                              doc.is_expired ? "text-rose-400 font-semibold" : "text-emerald-400"
+                            }`}
+                          >
+                            {doc.is_expired
+                              ? "Expired"
+                              : doc.expires_at
+                              ? `Expires ${formatDate(doc.expires_at)}`
+                              : "Permanent"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {doc.source_reference && (
+                        <p className="text-[11px] text-ink-soft bg-paper p-2 rounded border border-line">
+                          <span className="text-ink-mute font-semibold">Ref:</span> {doc.source_reference}
+                        </p>
+                      )}
+
+                      <div className="flex items-center justify-between pt-1 border-t border-line text-xs">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => api.evidence.download(doc.id, doc.filename)}
+                          className="h-7 text-[11px] px-2.5 border-line-strong hover:bg-sunken text-ink"
+                        >
+                          <Download className="w-3 h-3 mr-1" />
+                          Download
+                        </Button>
+
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleUnlinkEvidence(doc.id)}
+                          className="h-7 text-[11px] px-2 text-ink-mute hover:text-rose-400 hover:bg-rose-500/10"
+                        >
+                          <Unlink className="w-3 h-3 mr-1" />
+                          Unlink
+                        </Button>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-8 text-center rounded-lg border border-dashed border-line-strong bg-surface space-y-3">
+                <div className="w-10 h-10 rounded-full bg-paper border border-line flex items-center justify-center mx-auto text-ink-mute">
+                  <Paperclip className="w-5 h-5" />
+                </div>
+                <div className="space-y-1 max-w-md mx-auto">
+                  <h4 className="text-sm font-semibold text-ink">No Evidence Documents Attached</h4>
+                  <p className="text-xs text-ink-soft">
+                    This evaluation currently has no supporting documents attached. To substantiate claims that require independent verification, attach an existing document or upload a new one.
+                  </p>
+                </div>
+                <div className="flex items-center justify-center gap-2 pt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleOpenAttachModal}
+                    className="border-line-strong hover:bg-sunken text-xs text-ink"
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1.5" />
+                    Attach Existing Evidence
+                  </Button>
+                  <Link href="/evidence">
+                    <Button size="sm" className="bg-accent hover:bg-accent-hover text-ink text-xs font-medium">
+                      <Upload className="w-3.5 h-3.5 mr-1.5" />
+                      Upload New Evidence
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* MODAL 1: HUMAN APPROVAL / BLOCKER OVERRIDE MODAL */}
         {approvalModalOpen && (
           <div className="fixed inset-0 z-50 bg-ink/30 flex items-center justify-center p-4">
@@ -1618,6 +1889,82 @@ export default function ReviewDetailPage() {
                   Confirm Dismissal
                 </Button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL 4: ATTACH EVIDENCE MODAL */}
+        {attachEvidenceModalOpen && (
+          <div className="fixed inset-0 z-50 bg-ink/30 flex items-center justify-center p-4">
+            <div className="bg-surface border border-line rounded-xl max-w-md w-full p-6 shadow-soft space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-line">
+                <div className="flex items-center gap-2">
+                  <Paperclip className="w-4 h-4 text-accent-ink" />
+                  <h3 className="text-base font-semibold text-ink">Attach Corporate Evidence</h3>
+                </div>
+                <button
+                  onClick={() => setAttachEvidenceModalOpen(false)}
+                  className="rounded-lg p-1 text-ink-mute hover:text-ink hover:bg-sunken"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleAttachEvidence} className="space-y-4 text-xs">
+                <p className="text-ink-soft">
+                  Select a corporate document from your organization&apos;s library to attach to this evaluation.
+                </p>
+
+                {availableEvidence.length === 0 ? (
+                  <div className="p-4 rounded-lg bg-paper border border-line text-center space-y-2">
+                    <p className="text-ink-mute">No unlinked evidence documents available.</p>
+                    <Link href="/evidence">
+                      <Button size="sm" className="bg-accent hover:bg-accent-hover text-ink text-xs">
+                        <Upload className="w-3.5 h-3.5 mr-1" />
+                        Go to Evidence Manager to Upload
+                      </Button>
+                    </Link>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block font-medium text-ink mb-1.5">Evidence Document</label>
+                    <select
+                      value={selectedAttachEvidenceId}
+                      onChange={(e) => setSelectedAttachEvidenceId(e.target.value)}
+                      required
+                      className="w-full px-2.5 py-2 bg-paper border border-line rounded-lg text-xs text-ink focus:outline-none focus:border-accent"
+                    >
+                      <option value="">Select an evidence document...</option>
+                      {availableEvidence.map((ev) => (
+                        <option key={ev.id} value={ev.id}>
+                          {ev.title} ({ev.filename} • {ev.status})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-line">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAttachEvidenceModalOpen(false)}
+                    className="border-line-strong hover:bg-sunken text-xs"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    isLoading={linkingEvidence}
+                    disabled={availableEvidence.length === 0 || !selectedAttachEvidenceId}
+                    className="bg-accent hover:bg-accent-hover text-ink text-xs font-semibold"
+                  >
+                    Attach Document
+                  </Button>
+                </div>
+              </form>
             </div>
           </div>
         )}

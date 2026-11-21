@@ -23,12 +23,21 @@ class TokenResponse(BaseSchema):
 
 
 class RegisterRequest(BaseSchema):
-    organization_name: str
+    organization_name: Optional[str] = None
     organization_slug: Optional[str] = None
     email: EmailStr
     password: str
     full_name: str
-    role: Optional[UserRole] = UserRole.CREATOR
+    role: Optional[UserRole] = None
+    invite_token: Optional[str] = None
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, v: str) -> str:
+        s = v.strip()
+        if len(s) < 2:
+            raise ValueError("Full name must be at least 2 characters long.")
+        return s
 
     @field_validator("password")
     @classmethod
@@ -38,6 +47,29 @@ class RegisterRequest(BaseSchema):
         if len(v.encode("utf-8")) > 72:
             raise ValueError("Password must not exceed 72 bytes.")
         return v
+
+
+class InviteCreateRequest(BaseSchema):
+    email: Optional[EmailStr] = None
+    expires_in_days: int = 7
+
+
+class InviteResponse(BaseSchema):
+    invite_token: str
+    organization_id: str
+    organization_name: str
+    organization_slug: str
+    email: Optional[str] = None
+    expires_at: str
+
+
+class InviteVerifyResponse(BaseSchema):
+    organization_id: str
+    organization_name: str
+    organization_slug: str
+    email: Optional[str] = None
+    valid: bool = True
+
 
 
 class UserBase(BaseSchema):
