@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { History, Filter, RefreshCw, UserCheck, Shield } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
@@ -18,7 +18,7 @@ export default function AuditLogPage() {
   const [actionFilter, setActionFilter] = useState("");
   const [entityFilter, setEntityFilter] = useState("All");
 
-  const fetchEvents = async () => {
+  const fetchEvents = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.audit.list({
@@ -32,11 +32,11 @@ export default function AuditLogPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [actionFilter, entityFilter]);
 
   useEffect(() => {
     fetchEvents();
-  }, [actionFilter, entityFilter]);
+  }, [fetchEvents]);
 
   const entities = ["All", "Document", "Review", "Approval", "Fact", "Guideline", "Term", "Rule", "User"];
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -112,7 +112,7 @@ export default function NewReviewPage() {
   };
 
   // Fetch live applicable knowledge when transitioning to Step 3
-  const fetchApplicableKnowledge = async () => {
+  const fetchApplicableKnowledge = useCallback(async () => {
     setLoadingKnowledge(true);
     try {
       const data = await api.knowledge.getApplicable({
@@ -126,13 +126,13 @@ export default function NewReviewPage() {
     } finally {
       setLoadingKnowledge(false);
     }
-  };
+  }, [product, region, channel]);
 
   useEffect(() => {
     if (currentStep === 3) {
       fetchApplicableKnowledge();
     }
-  }, [currentStep, product, region, channel]);
+  }, [currentStep, fetchApplicableKnowledge]);
 
   // Validation before going to next step
   const handleProceedToStep2 = () => {

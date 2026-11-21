@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -54,6 +54,7 @@ export default function EvidencePage() {
   const [evidenceList, setEvidenceList] = useState<Evidence[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [submittedSearch, setSubmittedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [productFilter, setProductFilter] = useState<string>("All");
 
@@ -89,13 +90,13 @@ export default function EvidencePage() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   // Fetch Evidence List
-  const fetchEvidence = async () => {
+  const fetchEvidence = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.evidence.list({
         status: statusFilter === "All" ? undefined : (statusFilter as EvidenceStatus),
         product: productFilter === "All" ? undefined : productFilter,
-        q: search.trim() || undefined,
+        q: submittedSearch.trim() || undefined,
       });
       setEvidenceList(res);
     } catch (err: any) {
@@ -103,30 +104,38 @@ export default function EvidencePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter, productFilter, submittedSearch, error]);
 
   // Fetch available reviews for association selector
-  const fetchReviewsList = async () => {
+  const fetchReviewsList = useCallback(async () => {
     try {
       const res = await api.reviews.list();
       setAvailableReviews(res);
     } catch (err) {
       console.warn("Could not load reviews for association", err);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchEvidence();
+  }, [fetchEvidence]);
+
+  useEffect(() => {
     fetchReviewsList();
-  }, [statusFilter, productFilter]);
+  }, [fetchReviewsList]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchEvidence();
+    if (search === submittedSearch) {
+      fetchEvidence();
+    } else {
+      setSubmittedSearch(search);
+    }
   };
 
   const handleClearFilters = () => {
     setSearch("");
+    setSubmittedSearch("");
     setStatusFilter("All");
     setProductFilter("All");
   };

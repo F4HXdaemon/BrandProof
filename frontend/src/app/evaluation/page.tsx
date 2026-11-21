@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   Target,
@@ -42,6 +42,7 @@ export default function EvaluationPage() {
   const [evaluations, setEvaluations] = useState<Review[]>([]);
   const [loadingEvals, setLoadingEvals] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [submittedQuery, setSubmittedQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [productFilter, setProductFilter] = useState("All");
 
@@ -51,6 +52,7 @@ export default function EvaluationPage() {
   const [runningBenchmark, setRunningBenchmark] = useState(false);
   const [selectedCase, setSelectedCase] = useState<EvaluationCase | null>(null);
   const [downloadingReportId, setDownloadingReportId] = useState<string | null>(null);
+  const hasLoadedBenchmark = useRef(false);
 
   const handleDownloadReport = async (evalId: string, title?: string) => {
     setDownloadingReportId(evalId);
@@ -66,13 +68,13 @@ export default function EvaluationPage() {
   };
 
   // Load Real Brand Evaluations
-  const loadEvaluations = async () => {
+  const loadEvaluations = useCallback(async () => {
     setLoadingEvals(true);
     try {
       const res = await api.evaluation.list({
         status: statusFilter === "All" ? undefined : statusFilter,
         product: productFilter === "All" ? undefined : productFilter,
-        q: searchQuery.trim() || undefined,
+        q: submittedQuery.trim() || undefined,
       });
       setEvaluations(res);
     } catch (err: any) {
@@ -80,10 +82,10 @@ export default function EvaluationPage() {
     } finally {
       setLoadingEvals(false);
     }
-  };
+  }, [statusFilter, productFilter, submittedQuery]);
 
   // Load Benchmark Results
-  const loadBenchmark = async () => {
+  const loadBenchmark = useCallback(async () => {
     setRunningBenchmark(true);
     try {
       const res = await api.evaluation.run();
@@ -98,22 +100,27 @@ export default function EvaluationPage() {
       setLoadingBenchmark(false);
       setRunningBenchmark(false);
     }
-  };
+  }, [error]);
 
   useEffect(() => {
     loadEvaluations();
-  }, [statusFilter, productFilter]);
+  }, [loadEvaluations]);
 
   useEffect(() => {
-    if (activeTab === "benchmark" && !benchmarkData && !loadingBenchmark) {
+    if (activeTab === "benchmark" && !hasLoadedBenchmark.current) {
+      hasLoadedBenchmark.current = true;
       setLoadingBenchmark(true);
       loadBenchmark();
     }
-  }, [activeTab]);
+  }, [activeTab, loadBenchmark]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    loadEvaluations();
+    if (searchQuery === submittedQuery) {
+      loadEvaluations();
+    } else {
+      setSubmittedQuery(searchQuery);
+    }
   };
 
   const handleExportCsv = async () => {

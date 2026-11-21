@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   Scale,
   Plus,
@@ -60,7 +60,7 @@ export default function RulesPage() {
   const [channelScope, setChannelScope] = useState("All");
   const [saving, setSaving] = useState(false);
 
-  const fetchRules = async () => {
+  const fetchRules = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.rules.list({
@@ -73,11 +73,11 @@ export default function RulesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [typeFilter, severityFilter, error]);
 
   useEffect(() => {
     fetchRules();
-  }, [typeFilter, severityFilter]);
+  }, [fetchRules]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();

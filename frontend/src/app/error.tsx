@@ -43,7 +43,7 @@ export default function GlobalErrorPage({
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
           <Button
             onClick={() => reset()}
-            variant="default"
+            variant="primary"
             size="sm"
             className="w-full sm:w-auto gap-2"
           >

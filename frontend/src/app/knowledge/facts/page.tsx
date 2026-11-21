@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   Database,
   Plus,
@@ -74,7 +74,7 @@ export default function FactsPage() {
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvResult, setCsvResult] = useState<CsvImportResult | null>(null);
 
-  const fetchFacts = async () => {
+  const fetchFacts = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.facts.list({
@@ -91,11 +91,11 @@ export default function FactsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [search, statusFilter, productFilter, regionFilter, channelFilter, expiringOnly, error]);
 
   useEffect(() => {
     fetchFacts();
-  }, [search, statusFilter, productFilter, regionFilter, channelFilter, expiringOnly]);
+  }, [fetchFacts]);
 
   const handleCreateFact = async (e: React.FormEvent) => {
     e.preventDefault();

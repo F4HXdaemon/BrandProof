@@ -25,7 +25,7 @@ export default function NotFoundPage() {
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
           <Link href="/dashboard" className="w-full sm:w-auto">
-            <Button variant="default" size="sm" className="w-full gap-2">
+            <Button variant="primary" size="sm" className="w-full gap-2">
               <Home className="w-4 h-4" />
               Go to Dashboard
             </Button>

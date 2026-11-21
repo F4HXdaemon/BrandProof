@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   Building2,
   Users,
@@ -101,7 +101,7 @@ export default function SettingsPage() {
 
   const isAdminOrOwner = isOwner || user?.role === "Admin";
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [orgData, membersData] = await Promise.all([
         api.organizations.getCurrent(),
@@ -110,7 +110,13 @@ export default function SettingsPage() {
       setOrg(orgData);
       setMembers(membersData);
 
-      if (isAdminOrOwner) {
+      const canManageInvites =
+        currentOrganization?.is_owner ||
+        user?.role === "Owner" ||
+        user?.role === "Admin" ||
+        (orgData?.owner_id && orgData.owner_id === user?.id);
+
+      if (canManageInvites) {
         try {
           const invData = await api.organizations.getPendingInvitations();
           setInvitations(invData);
@@ -124,11 +130,11 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentOrganization?.is_owner, user?.role, user?.id, error]);
 
   useEffect(() => {
     loadData();
-  }, [isAdminOrOwner]);
+  }, [loadData]);
 
   const handleRoleChange = async (membershipId: string, newRole: UserRole) => {
     setUpdatingMemberId(membershipId);

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useState, useCallback, useMemo } from "react";
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X } from "lucide-react";
 
 export type ToastType = "success" | "error" | "info" | "warning";
@@ -25,11 +25,11 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const removeToast = (id: string) => {
+  const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+  }, []);
 
-  const addToast = (
+  const addToast = useCallback((
     title: string,
     message?: string,
     type: ToastType = "info"
@@ -40,18 +40,23 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => {
       removeToast(id);
     }, 4500);
-  };
+  }, [removeToast]);
+
+  const success = useCallback((title: string, message?: string) => addToast(title, message, "success"), [addToast]);
+  const error = useCallback((title: string, message?: string) => addToast(title, message, "error"), [addToast]);
+  const info = useCallback((title: string, message?: string) => addToast(title, message, "info"), [addToast]);
+  const warning = useCallback((title: string, message?: string) => addToast(title, message, "warning"), [addToast]);
+
+  const value = useMemo(() => ({
+    toast: addToast,
+    success,
+    error,
+    info,
+    warning,
+  }), [addToast, success, error, info, warning]);
 
   return (
-    <ToastContext.Provider
-      value={{
-        toast: addToast,
-        success: (title, message) => addToast(title, message, "success"),
-        error: (title, message) => addToast(title, message, "error"),
-        info: (title, message) => addToast(title, message, "info"),
-        warning: (title, message) => addToast(title, message, "warning"),
-      }}
-    >
+    <ToastContext.Provider value={value}>
       {children}
       {/* Toast Render Container */}
       <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-md w-full pointer-events-none">

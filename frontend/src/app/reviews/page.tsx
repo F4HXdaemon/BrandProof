@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
   FileCheck2,
@@ -37,8 +37,9 @@ export default function ReviewsPage() {
   const [regionFilter, setRegionFilter] = useState<string>("All");
   const [channelFilter, setChannelFilter] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [submittedQuery, setSubmittedQuery] = useState<string>("");
 
-  const fetchReviews = async () => {
+  const fetchReviews = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.reviews.list({
@@ -46,7 +47,7 @@ export default function ReviewsPage() {
         product: productFilter === "All" ? undefined : productFilter,
         region: regionFilter === "All" ? undefined : regionFilter,
         channel: channelFilter === "All" ? undefined : channelFilter,
-        q: searchQuery.trim() || undefined,
+        q: submittedQuery.trim() || undefined,
       });
       setReviews(res);
     } catch (err) {
@@ -54,15 +55,19 @@ export default function ReviewsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter, productFilter, regionFilter, channelFilter, submittedQuery]);
 
   useEffect(() => {
     fetchReviews();
-  }, [statusFilter, productFilter, regionFilter, channelFilter]);
+  }, [fetchReviews]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchReviews();
+    if (searchQuery === submittedQuery) {
+      fetchReviews();
+    } else {
+      setSubmittedQuery(searchQuery);
+    }
   };
 
   const clearFilters = () => {
@@ -71,6 +76,7 @@ export default function ReviewsPage() {
     setRegionFilter("All");
     setChannelFilter("All");
     setSearchQuery("");
+    setSubmittedQuery("");
   };
 
   const hasActiveFilters =

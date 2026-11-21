@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   Layers,
   Plus,
@@ -53,7 +53,7 @@ export default function TerminologyPage() {
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvResult, setCsvResult] = useState<CsvImportResult | null>(null);
 
-  const fetchTerms = async () => {
+  const fetchTerms = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.terms.list({
@@ -66,11 +66,11 @@ export default function TerminologyPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [search, statusFilter, error]);
 
   useEffect(() => {
     fetchTerms();
-  }, [search, statusFilter]);
+  }, [fetchTerms]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();

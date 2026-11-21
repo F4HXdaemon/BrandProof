@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -119,7 +119,20 @@ export default function ReviewDetailPage() {
   const [newCommentFindingId, setNewCommentFindingId] = useState<string>("");
   const [submittingComment, setSubmittingComment] = useState(false);
 
-  const fetchReview = async () => {
+  const fetchDiff = useCallback(async (baseVerId?: string) => {
+    if (!reviewId) return;
+    setDiffLoading(true);
+    try {
+      const diff = await api.reviews.getDiff(reviewId, baseVerId);
+      setDiffData(diff);
+    } catch (dErr) {
+      console.warn("No diff available or single version present", dErr);
+    } finally {
+      setDiffLoading(false);
+    }
+  }, [reviewId]);
+
+  const fetchReview = useCallback(async () => {
     if (!reviewId) return;
     setLoading(true);
     try {
@@ -152,24 +165,11 @@ export default function ReviewDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const fetchDiff = async (baseVerId?: string) => {
-    if (!reviewId) return;
-    setDiffLoading(true);
-    try {
-      const diff = await api.reviews.getDiff(reviewId, baseVerId);
-      setDiffData(diff);
-    } catch (dErr) {
-      console.warn("No diff available or single version present", dErr);
-    } finally {
-      setDiffLoading(false);
-    }
-  };
+  }, [reviewId, fetchDiff, error]);
 
   useEffect(() => {
     fetchReview();
-  }, [reviewId]);
+  }, [fetchReview]);
 
   // Permissions & Blocker Calculations
   const isReviewerOrAdmin =

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { BookMarked, Plus, Filter, Trash2, Archive, Shield, Layers, Globe, Tag, CheckCircle2 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
@@ -47,7 +47,7 @@ export default function GuidelinesPage() {
   const [channelScope, setChannelScope] = useState("All");
   const [saving, setSaving] = useState(false);
 
-  const fetchGuidelines = async () => {
+  const fetchGuidelines = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.guidelines.list({
@@ -60,11 +60,11 @@ export default function GuidelinesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [categoryFilter, severityFilter, error]);
 
   useEffect(() => {
     fetchGuidelines();
-  }, [categoryFilter, severityFilter]);
+  }, [fetchGuidelines]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
